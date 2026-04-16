@@ -1,0 +1,1988 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Tracé Planning Tool</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+
+@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue:       #1d5fa6;
+  --blue-lt:    #e8f1fb;
+  --blue-mid:   #5b8ec4;
+  --amber:      #b86b00;
+  --amber-lt:   #fef3e0;
+  --green:      #1c7a52;
+  --green-lt:   #e3f5ed;
+  --red-lt:     #fdecea;
+  --ink:        #111827;
+  --ink-soft:   #374151;
+  --muted:      #6b7280;
+  --line:       #e5e7eb;
+  --line-soft:  #f3f4f6;
+
+  /* Right column — bright, open, result-focused */
+  --bg:         #f0f4f8;
+  --white:      #ffffff;
+  --panel:      #ffffff;
+
+  /* Left column — warm slate, editorial, input-focused */
+  --left-bg:    #2c4a65;
+  --left-card:  #345578;
+  --left-card-hdr: #294d6e;
+  --left-border: rgba(255,255,255,0.13);
+  --left-sec:   rgba(255,255,255,0.35);
+  --left-text:  #eef3f9;
+  --left-muted: #9dbad6;
+  --left-input: rgba(255,255,255,0.1);
+  --left-input-border: rgba(255,255,255,0.2);
+  --mono: 'JetBrains Mono', monospace;
+  --ui: 'Barlow', sans-serif;
+  --cond: 'Barlow Condensed', sans-serif;
+}
+
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: var(--ui); font-size: 13px; color: var(--ink); background: var(--bg); }
+
+/* ── HEADER ───────────────────────────────────────── */
+.hdr { height: 46px; min-height: 46px; background: var(--white); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 0; flex-shrink: 0; }
+.hdr-brand {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 18px; border-right: 1px solid var(--line); height: 100%;
+}
+.hdr-mark {
+  width: 26px; height: 26px; background: var(--blue);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 8px; font-weight: 500; color: #fff;
+}
+.hdr-title { font-family: var(--cond); font-size: 16px; font-weight: 700; color: var(--ink); letter-spacing: .02em; }
+.hdr-sub { font-size: 11px; color: var(--muted); padding-left: 14px; }
+.hdr-spacer { flex: 1; }
+.hdr-actions { display: flex; gap: 8px; padding: 0 16px; }
+.hdr-btn {
+  padding: 5px 14px; border-radius: 3px; font-family: var(--ui); font-size: 12px;
+  font-weight: 500; cursor: pointer; border: 1px solid var(--line);
+  background: var(--white); color: var(--ink-soft); transition: all .15s;
+}
+.hdr-btn:hover { background: var(--line-soft); }
+.hdr-btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+.hdr-btn.primary:hover { background: #1a52910; filter: brightness(1.05); }
+
+/* ── WORKSPACE ────────────────────────────────────── */
+.workspace {
+  display: grid;
+  grid-template-columns: var(--left-w, 390px) 4px 1fr;
+  height: calc(100vh - 46px);
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ── LEFT PANEL ───────────────────────────────────── */
+.left { background: var(--left-bg); border-right: 2px solid var(--blue); height: 100%; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; }
+.left-scroll { flex: 1; padding: 14px 14px 20px; display: flex; flex-direction: column; gap: 12px; }
+
+
+
+/* Section label */
+.sec { font-family: var(--mono); font-size: 8px; font-weight: 500; text-transform: uppercase; letter-spacing: .12em; color: var(--left-muted); padding-bottom: 5px; border-bottom: 1px solid var(--left-border); margin-bottom: 4px; }
+
+/* Card wrapper */
+.card { background: var(--left-card); border: 1px solid var(--left-border); border-radius: 4px; overflow: hidden; }
+.card-hdr { background: var(--left-card-hdr); padding: 8px 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--left-border); }
+.card-icon { font-size: 12px; }
+.card-title { font-family: var(--cond); font-size: 13px; font-weight: 600; color: var(--left-text); flex: 1; letter-spacing: .01em; }
+.card-add {
+  width: 22px; height: 22px; border-radius: 3px;
+  background: var(--blue-lt); border: 1px solid #bcd4ef;
+  color: var(--blue); font-size: 15px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-weight: 300; transition: background .15s;
+}
+.card-add:hover { background: #d4e6f8; }
+
+/* ── DROPZONE ─────────────────────────────────────── */
+.dz { border: 1.5px dashed rgba(91,142,196,.4); background: rgba(91,142,196,.08); border-radius: 4px; padding: 18px 14px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s; }
+.dz:hover, .dz.over { border-color: var(--blue-mid); background: rgba(91,142,196,.18); }
+.dz-icon { font-size: 20px; margin-bottom: 5px; }
+.dz-title { font-family: var(--cond); font-size: 13px; font-weight: 600; color: var(--left-text); }
+.dz-sub { font-size: 10px; color: var(--left-muted); margin-top: 2px; line-height: 1.5; }
+.dz-loaded { font-family: var(--mono); font-size: 9px; color: var(--green); margin-top: 6px; font-weight: 500; }
+.dz input { display: none; }
+
+/* ── COLLAPSIBLE KENGETALLEN ──────────────────────── */
+.coll { border: 1px solid var(--left-border); border-radius: 4px; overflow: hidden; }
+.coll-hdr { padding: 9px 12px; cursor: pointer; background: var(--left-card-hdr); display: flex; align-items: center; gap: 8px; user-select: none; transition: background .15s; }
+.coll-hdr:hover { background: rgba(255,255,255,.06); }
+.coll-arrow { color: var(--left-muted); font-size: 9px; transition: transform .2s; }
+.coll-arrow.open { transform: rotate(90deg); }
+.coll-name { font-family: var(--cond); font-size: 13px; font-weight: 600; color: var(--left-text); flex: 1; }
+.coll-hint { font-size: 10px; color: var(--left-muted); }
+.coll-body { display: none; padding: 12px; background: rgba(0,0,0,.2); border-top: 1px solid var(--left-border); }
+.coll-body.open { display: block; }
+
+.kg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.kg-full { grid-column: 1/-1; }
+.kg-sep { grid-column: 1/-1; font-family: var(--mono); font-size: 8px; text-transform: uppercase; letter-spacing: .1em; color: var(--left-muted); padding-top: 8px; border-top: 1px solid var(--left-border); margin-top: 2px; }
+.kg-item label { display: block; font-size: 10px; color: var(--left-muted); margin-bottom: 3px; font-weight: 500; }
+.kg-item input, .kg-item select { width: 100%; padding: 5px 8px; border: 1px solid var(--left-input-border); border-radius: 3px; font-family: var(--mono); font-size: 11px; color: var(--left-text); background: var(--left-input); outline: none; transition: border-color .15s; }
+.kg-item input:focus { border-color: var(--blue-mid); }
+
+/* ── INPUT TABLES ─────────────────────────────────── */
+.it { width: 100%; border-collapse: collapse; }
+.it th { padding: 5px 8px; text-align: left; background: rgba(0,0,0,.2); font-family: var(--mono); font-size: 8px; font-weight: 500; text-transform: uppercase; letter-spacing: .09em; color: var(--left-muted); border-bottom: 1px solid var(--left-border); white-space: nowrap; }
+.it td { padding: 4px 6px; border-bottom: 1px solid rgba(255,255,255,.04); vertical-align: middle; }
+.it tr:last-child td { border-bottom: none; }
+.it tr:hover td { background: rgba(255,255,255,.04); }
+.it .empty td { padding: 10px 8px; text-align: center; font-size: 10px; color: var(--left-muted); border-bottom: none; font-style: italic; }
+
+.fi { width: 100%; padding: 3px 6px; border: 1px solid var(--left-input-border); border-radius: 2px; font-family: var(--mono); font-size: 11px; color: var(--left-text); background: var(--left-input); outline: none; transition: all .15s; }
+.fi:hover { border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.1); }
+.fi:focus { border-color: var(--blue-mid); background: rgba(91,142,196,.15); }
+.fi.nm { font-size: 11px; }
+.fi.nr { text-align: right; width: 60px; }
+.fi.sm { width: 46px; text-align: right; }
+
+/* chips */
+.chip { display: inline-block; padding: 2px 7px; border-radius: 2px; cursor: pointer; font-size: 9px; font-weight: 600; letter-spacing: .02em; border: 1px solid var(--left-input-border); color: var(--left-muted); background: var(--left-input); user-select: none; transition: all .15s; white-space: nowrap; }
+.chip.on.binnen { background: var(--blue-lt); border-color: #9dc3e8; color: var(--blue); }
+.chip.on.verhard { background: var(--amber-lt); border-color: #e8c070; color: var(--amber); }
+.chip.on.bemaling { background: var(--green-lt); border-color: #7dcba8; color: var(--green); }
+.chip.on.sloop  { background: #fef2f2; border-color: #fca5a5; color: #b91c1c; }
+/* ── DATE PICKER ─────────────────────────────────────── */
+.date-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.date-item label { display: block; font-size: 10px; color: var(--left-muted); margin-bottom: 3px; font-weight: 500; }
+.date-input {
+  width: 100%; padding: 6px 8px;
+  border: 1px solid var(--left-input-border); border-radius: 3px;
+  font-family: var(--mono); font-size: 11px; color: var(--left-text);
+  background: var(--left-input); outline: none; transition: border-color .15s;
+  color-scheme: dark;
+}
+.date-input:focus { border-color: var(--blue-mid); }
+.date-duration {
+  grid-column: 1/-1; padding: 7px 10px;
+  background: rgba(0,0,0,.15); border-radius: 3px;
+  border: 1px solid var(--left-border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.date-duration .dur-label { font-size: 10px; color: var(--left-muted); }
+.date-duration .dur-value { font-family: var(--mono); font-size: 12px; color: var(--left-text); font-weight: 500; }
+.date-duration .dur-sub { font-size: 9px; color: var(--left-muted); text-align: right; }
+
+.overig-uren { width: 62px; padding: 3px 6px; text-align: right; border: 1px solid var(--left-input-border); border-radius: 2px; font-family: var(--mono); font-size: 11px; color: var(--left-text); background: var(--left-input); outline: none; }
+.overig-uren:focus { border-color: var(--blue-mid); }
+.chip:hover { opacity: .8; }
+
+.del { background: none; border: none; color: rgba(255,255,255,.2); cursor: pointer; font-size: 13px; padding: 2px 4px; border-radius: 2px; transition: all .15s; }
+.del:hover { color: #ef4444; background: rgba(239,68,68,.15); }
+
+/* Verkeer inputs */
+.vk-lbl { font-size: 11px; color: var(--left-text); padding: 4px 8px; }
+.vk-auto {
+  display: inline-block; font-family: var(--mono); font-size: 11px;
+  color: var(--blue); font-weight: 500; padding: 3px 6px;
+  background: var(--blue-lt); border-radius: 2px;
+  min-width: 42px; text-align: right;
+}
+
+/* ── LEFT FOOTER ──────────────────────────────────── */
+.left-footer { border-top: 1px solid var(--left-border); background: rgba(0,0,0,.2); padding: 10px 14px; display: flex; gap: 8px; flex-shrink: 0; }
+.reset-btn { flex: 1; padding: 8px 12px; border-radius: 3px; cursor: pointer; font-family: var(--ui); font-size: 12px; font-weight: 500; border: 1px solid rgba(239,68,68,.4); background: rgba(239,68,68,.12); color: #f87171; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all .15s; }
+.reset-btn:hover { background: rgba(239,68,68,.22); border-color: rgba(239,68,68,.6); }
+.reset-btn-secondary { padding: 8px 12px; border-radius: 3px; cursor: pointer; font-family: var(--ui); font-size: 12px; font-weight: 500; border: 1px solid var(--left-border); background: var(--left-input); color: var(--left-muted); transition: all .15s; }
+.reset-btn-secondary:hover { background: rgba(255,255,255,.1); color: var(--left-text); }
+
+/* ── RIGHT PANEL ──────────────────────────────────── */
+.right { background: var(--bg); height: 100%; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; }
+.right-top { background: var(--white); border-bottom: 1px solid var(--line); padding: 10px 18px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 5; flex-shrink: 0; }
+.right-top-title { font-family: var(--cond); font-size: 16px; font-weight: 700; color: var(--ink); flex: 1; }
+.right-ts { font-family: var(--mono); font-size: 9px; color: var(--muted); }
+.right-scroll { flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+
+/* KPI grid */
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); gap: 8px; }
+.kpi {
+  background: var(--white); border: 1px solid var(--line);
+  border-radius: 4px; padding: 11px 13px;
+  border-top: 3px solid var(--blue);
+}
+.kpi.am { border-top-color: var(--amber); }
+.kpi.gr { border-top-color: var(--green); }
+.kpi.or { border-top-color: #c85a1a; }
+.kpi .kl { font-family: var(--mono); font-size: 8px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+.kpi .kv { font-family: var(--mono); font-size: 21px; font-weight: 500; color: var(--ink); margin-top: 4px; line-height: 1; }
+.kpi .ks { font-size: 10px; color: var(--muted); margin-top: 3px; }
+
+/* Output sections */
+.os { background: var(--white); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.os-hdr {
+  padding: 8px 14px; display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--line); background: #fafbfc;
+}
+.os-icon { font-size: 13px; }
+.os-title { font-family: var(--cond); font-size: 14px; font-weight: 700; color: var(--ink); flex: 1; letter-spacing: .01em; }
+.os-badge {
+  font-family: var(--mono); font-size: 9px; padding: 2px 8px;
+  border-radius: 10px; background: var(--blue-lt); color: var(--blue); font-weight: 500;
+}
+.os-badge.am { background: var(--amber-lt); color: var(--amber); }
+.os-badge.gr { background: var(--green-lt); color: var(--green); }
+
+/* Output tables */
+.ot { width: 100%; border-collapse: collapse; }
+.ot th {
+  padding: 6px 12px; text-align: left; background: #fafbfc;
+  font-family: var(--mono); font-size: 8px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: .09em; color: var(--muted);
+  border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+.ot th.r { text-align: right; }
+.ot td { padding: 7px 12px; border-bottom: 1px solid #f3f4f6; font-size: 12px; }
+.ot tr:last-child td { border-bottom: none; }
+.ot tr:hover td { background: #f8fafc; }
+.ot td.r { text-align: right; font-family: var(--mono); font-size: 11px; }
+.ot td.nm { font-family: var(--mono); font-size: 11px; color: var(--ink); font-weight: 500; }
+.ot td.mu { color: var(--muted); }
+.ot td.hi { color: var(--blue); font-weight: 500; font-family: var(--mono); font-size: 11px; }
+.ot td.hi.r { text-align: right; }
+.ot .tot td { font-weight: 600; background: #f8fafc; border-top: 1px solid var(--line); border-bottom: none; }
+
+.tag {
+  display: inline-block; font-size: 8px; font-weight: 600; letter-spacing: .03em;
+  padding: 1px 5px; border-radius: 2px; margin-left: 4px; vertical-align: middle;
+  text-transform: uppercase;
+}
+.tag.b { background: var(--blue-lt); color: var(--blue); }
+.tag.v { background: var(--amber-lt); color: var(--amber); }
+.tag.g { background: var(--green-lt); color: var(--green); }
+.tag.bi { background: #eff6ff; color: #2563eb; }
+
+.footnote { padding: 6px 14px; font-size: 10px; color: var(--muted); border-top: 1px solid var(--line); font-style: italic; background: #fafbfc; }
+
+.empty-state {
+  padding: 40px 20px; text-align: center;
+  font-family: var(--mono); font-size: 11px; color: #c0cad4; line-height: 1.8;
+}
+.empty-state .ei { font-size: 32px; margin-bottom: 10px; opacity: .5; }
+
+/* ── COLUMN RESIZER ──────────────────────────────────── */
+.resizer {
+  background: var(--line);
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: background .15s;
+  z-index: 10;
+}
+.resizer:hover, .resizer.dragging {
+  background: var(--blue);
+}
+.resizer::after {
+  content: '';
+  width: 2px;
+  height: 32px;
+  background: currentColor;
+  border-radius: 2px;
+  opacity: .4;
+  box-shadow: 3px 0 0 currentColor, -3px 0 0 currentColor;
+}
+.resizer:hover::after, .resizer.dragging::after {
+  opacity: .9;
+}
+
+
+/* ══ THREE-VIEW SHELL ══════════════════════════════════════ */
+html, body { margin:0; padding:0; height:100%; overflow:hidden;
+  font-family:var(--body,'DM Sans',sans-serif); font-size:13px;
+  color:var(--ink,#111827); background:var(--bg,#f9fafb); }
+
+/* ── VIEW SYSTEM ── */
+.view { display:none; flex-direction:column; height:100vh; overflow:hidden; }
+.view.active { display:flex; }
+
+/* ── TOPBAR (shared) ── */
+.topbar {
+  height:46px; min-height:46px; flex-shrink:0;
+  background:var(--white,#fff); border-bottom:1px solid var(--line,#e5e7eb);
+  display:flex; align-items:center; gap:0;
+}
+.topbar-brand { display:flex; align-items:center; gap:10px; padding:0 18px;
+  border-right:1px solid var(--line,#e5e7eb); height:100%; }
+.topbar-mark { width:26px; height:26px; background:var(--blue,#1d5fa6);
+  display:flex; align-items:center; justify-content:center;
+  font-family:var(--mono,'JetBrains Mono',monospace); font-size:8px; font-weight:500; color:#fff; }
+.topbar-title { font-family:var(--cond,'Barlow Condensed',sans-serif); font-size:16px; font-weight:700;
+  color:var(--ink,#111827); letter-spacing:.02em; }
+.topbar-sub { font-size:11px; color:var(--muted,#6b7280); padding-left:14px; }
+.topbar-spacer { flex:1; }
+.topbar-actions { display:flex; gap:8px; padding:0 16px; align-items:center; }
+.nav-pill {
+  display:flex; border:1px solid var(--line,#e5e7eb); border-radius:4px; overflow:hidden;
+}
+.nav-pill-btn {
+  padding:5px 14px; font-size:11px; font-weight:600; cursor:pointer;
+  border:none; background:var(--white,#fff); color:var(--muted,#6b7280);
+  font-family:var(--ui,'DM Sans',sans-serif); transition:all .15s;
+  display:flex; align-items:center; gap:6px; letter-spacing:.02em;
+}
+.nav-pill-btn.active { background:var(--blue,#1d5fa6); color:#fff; }
+.nav-pill-btn:not(.active):hover { background:var(--line-soft,#f3f4f6); color:var(--ink,#111827); }
+.nav-pill-btn + .nav-pill-btn { border-left:1px solid var(--line,#e5e7eb); }
+.nav-pill-btn .pill-dot {
+  width:7px; height:7px; border-radius:50%; background:currentColor; opacity:.6;
+}
+
+/* ── VIEW 1: KAART ─────────────────────────────────────── */
+.map-body { flex:1; display:grid; grid-template-columns:1fr 340px;
+  overflow:hidden; min-height:0; }
+#map { width:100%; height:100%; }
+
+.map-sidebar {
+  background:var(--left-bg,#2c4a65); border-left:1px solid rgba(255,255,255,.1);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+.map-sidebar-title {
+  padding:14px 16px 10px;
+  font-family:var(--cond,'Barlow Condensed',sans-serif); font-size:14px; font-weight:700;
+  color:#eef3f9; letter-spacing:.01em; border-bottom:1px solid rgba(255,255,255,.08);
+  flex-shrink:0;
+}
+.map-sidebar-list { flex:1; overflow-y:auto; padding:8px; }
+.map-sidebar-list::-webkit-scrollbar { width:4px; }
+.map-sidebar-list::-webkit-scrollbar-thumb { background:rgba(255,255,255,.2); border-radius:2px; }
+
+.map-feature-item {
+  padding:8px 10px; border-radius:3px; margin-bottom:4px;
+  cursor:pointer; border:1px solid transparent; transition:all .15s;
+  display:flex; align-items:center; gap:8px;
+}
+.map-feature-item:hover { background:rgba(255,255,255,.07); }
+.map-feature-item.selected { background:rgba(91,155,213,.2); border-color:rgba(91,155,213,.5); }
+.map-feature-type {
+  font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.08em;
+  padding:2px 5px; border-radius:2px; flex-shrink:0;
+}
+.type-v { background:rgba(29,95,166,.3); color:#90c4f9; }
+.type-b { background:rgba(200,90,26,.3); color:#f5a97f; }
+.type-p { background:rgba(200,90,26,.2); color:#f5a97f; }
+.type-s { background:rgba(185,28,28,.3); color:#fca5a5; }
+.map-feature-name {
+  font-family:var(--mono,'JetBrains Mono',monospace); font-size:10px;
+  color:#c8d8e8; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.map-feature-len {
+  font-family:var(--mono,'JetBrains Mono',monospace); font-size:9px; color:#7a9ab8;
+}
+
+.map-sidebar-footer {
+  padding:12px; border-top:1px solid rgba(255,255,255,.08); flex-shrink:0;
+}
+.confirm-btn {
+  width:100%; padding:11px; border:none; border-radius:4px;
+  background:var(--blue,#1d5fa6); color:#fff; font-size:13px; font-weight:600;
+  font-family:var(--cond,'Barlow Condensed',sans-serif); letter-spacing:.04em;
+  cursor:pointer; transition:all .2s; display:flex; align-items:center;
+  justify-content:center; gap:8px;
+}
+.confirm-btn:hover { background:#1752941; filter:brightness(1.1); }
+.confirm-btn:disabled { opacity:.4; cursor:not-allowed; }
+
+.map-legend {
+  position:absolute; bottom:20px; left:12px; z-index:1000;
+  background:rgba(15,31,56,.88); backdrop-filter:blur(6px);
+  border:1px solid rgba(255,255,255,.12); border-radius:4px;
+  padding:10px 12px; min-width:150px;
+}
+.map-legend-title { font-size:9px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.1em; color:#7a9ab8; margin-bottom:7px; }
+.map-legend-item { display:flex; align-items:center; gap:8px; margin-bottom:5px; font-size:10px; color:#c8d8e8; }
+.map-legend-line { width:24px; height:3px; border-radius:2px; }
+
+/* ── VIEW 2: INVOER (existing workspace layout) ── */
+#viewInvoer .workspace {
+  display:grid; grid-template-columns:var(--left-w,390px) 4px 1fr;
+  flex:1; min-height:0; overflow:hidden;
+}
+/* left/right already defined in original CSS */
+
+/* ── VIEW 3: RESULTATEN (full width right panel) ── */
+.results-body {
+  flex:1; overflow-y:auto; overflow-x:hidden;
+  padding:20px; display:flex; flex-direction:column; gap:14px;
+}
+
+/* stats badge in nav */
+.nav-badge {
+  background:var(--amber,#b86b00); color:#fff;
+  font-size:9px; font-weight:700; padding:1px 6px; border-radius:8px;
+  font-family:var(--mono); min-width:18px; text-align:center;
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════
+     SHARED TOPBAR
+════════════════════════════════════════════════════════ -->
+<div class="topbar">
+  <div class="topbar-brand">
+    <div class="topbar-mark">TPT</div>
+    <div class="topbar-title">Tracé Planning Tool</div>
+  </div>
+  <span class="topbar-sub">materieelinzet · draaiuren · bemaling · verkeer</span>
+  <div class="topbar-spacer"></div>
+  <div class="topbar-actions">
+    <!-- Navigation pills -->
+    <div class="nav-pill">
+      <button class="nav-pill-btn active" id="navKaart" onclick="showView('kaart')">
+        <span>🗺</span> Kaart
+      </button>
+      <button class="nav-pill-btn" id="navInvoer" onclick="showView('invoer')">
+        <span>⛏</span> Invoer
+      </button>
+      <button class="nav-pill-btn" id="navResultaten" onclick="showView('resultaten')">
+        <span>📊</span> Resultaten <span class="nav-badge" id="navBadge" style="display:none">!</span>
+      </button>
+    </div>
+    <div style="width:1px;height:24px;background:var(--line)"></div>
+    <button class="hdr-btn" onclick="clearAll()">↺ Reset</button>
+    <button class="hdr-btn" onclick="exportCSV()">↓ CSV</button>
+    <button class="hdr-btn" style="background:var(--green,#1c7a52);border-color:var(--green,#1c7a52);color:#fff" onclick="exportFormatted()">↓ Excel rapport</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     VIEW 1: KAART
+════════════════════════════════════════════════════════ -->
+<div class="view active" id="viewKaart" style="position:relative">
+  <div class="map-body">
+    <div id="map"></div>
+    <div class="map-sidebar">
+      <div class="map-sidebar-title">
+        📂 GeoJSON — features
+        <div style="font-size:10px;font-weight:400;color:#7a9ab8;margin-top:2px" id="mapStatus">Sleep een GeoJSON-bestand op de kaart of gebruik de dropzone hieronder</div>
+      </div>
+
+      <!-- Drop zone inside sidebar -->
+      <div id="mapDz" style="margin:8px;border:1.5px dashed rgba(91,155,213,.4);border-radius:3px;
+           padding:16px;text-align:center;cursor:pointer;background:rgba(91,155,213,.06);transition:all .15s"
+           onclick="document.getElementById('gjfMap').click()"
+           ondragover="event.preventDefault();this.style.borderColor='#5b9bd5';this.style.background='rgba(91,155,213,.18)'"
+           ondragleave="this.style.borderColor='rgba(91,155,213,.4)';this.style.background='rgba(91,155,213,.06)'"
+           ondrop="handleMapDrop(event)">
+        <div style="font-size:20px;margin-bottom:4px">📂</div>
+        <div style="font-size:12px;font-weight:600;color:#9dbad6">Sleep GeoJSON hierheen</div>
+        <div style="font-size:10px;color:#5a7890;margin-top:2px">of klik om te uploaden</div>
+        <input type="file" id="gjfMap" accept=".geojson,.json" style="display:none" onchange="handleMapFile(event)">
+      </div>
+
+      <div class="map-sidebar-list" id="mapFeatureList">
+        <div style="padding:16px;text-align:center;font-size:10px;color:#4a6880;font-style:italic">
+          Geen features geladen
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div style="padding:10px 12px;border-top:1px solid rgba(255,255,255,.08);flex-shrink:0">
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#7a9ab8;margin-bottom:6px">Legenda</div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <div style="display:flex;align-items:center;gap:8px;font-size:10px;color:#c8d8e8"><div style="width:24px;height:3px;background:#5b9bd5;border-radius:2px"></div>Verbinding</div>
+          <div style="display:flex;align-items:center;gap:8px;font-size:10px;color:#c8d8e8"><div style="width:24px;height:3px;background:#e06420;border-radius:2px"></div>Gestuurde boring</div>
+          <div style="display:flex;align-items:center;gap:8px;font-size:10px;color:#c8d8e8"><div style="width:24px;height:3px;background:#f5a97f;border-radius:2px;border:1px dashed #e06420"></div>Persing</div>
+          <div style="display:flex;align-items:center;gap:8px;font-size:10px;color:#c8d8e8"><div style="width:24px;height:3px;background:#ef4444;border-radius:2px"></div>Uit te nemen</div>
+          <div style="display:flex;align-items:center;gap:8px;font-size:10px;color:#4a6880"><div style="width:24px;height:3px;background:#9aa3b0;border-radius:2px;opacity:.5"></div>Gefilterd</div>
+        </div>
+      </div>
+
+      <div class="map-sidebar-footer">
+        <button class="confirm-btn" id="confirmBtn" onclick="confirmAndGoToInvoer()" disabled>
+          <span>✓</span> Bevestig &amp; naar invoer
+        </button>
+        <div style="font-size:10px;color:#5a7890;text-align:center;margin-top:6px" id="confirmHint">
+          Laad eerst een GeoJSON bestand
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     VIEW 2: INVOER
+════════════════════════════════════════════════════════ -->
+<div class="view" id="viewInvoer">
+  <div class="workspace">
+    <!-- Left panel -->
+    <div class="left">
+      <div class="left-scroll">
+
+
+      <!-- 01 GeoJSON -->
+      <div>
+        <div class="sec">01 — GeoJSON import</div>
+        <div class="dz" id="dz"
+          onclick="document.getElementById('gjf').click()"
+          ondragover="event.preventDefault();this.classList.add('over')"
+          ondragleave="this.classList.remove('over')"
+          ondrop="dropGJ(event)">
+          <div class="dz-icon">📂</div>
+          <div class="dz-title">Sleep GeoJSON hierheen of klik</div>
+          <div class="dz-sub">LineString features · WGS84 of RD New<br>Verbindingen, boringen &amp; persingen worden herkend op properties</div>
+          <div class="dz-loaded" id="dzTxt"></div>
+          <input type="file" id="gjf" accept=".geojson,.json" onchange="fileInput(event)">
+        </div>
+      </div>
+      <!-- 02 Kengetallen -->
+      <div>
+        <div class="sec">02 — Kengetallen</div>
+        <div class="coll">
+          <div class="coll-hdr" onclick="toggleColl(this)">
+            <span class="coll-arrow">▶</span>
+            <span class="coll-name">Standaard kengetallen</span>
+            <span class="coll-hint">klik om te openen</span>
+          </div>
+          <div class="coll-body">
+            <div class="kg-grid">
+
+              <div class="kg-sep">Open ontgraving (m per week, 5 × 8u)</div>
+              <div class="kg-item">
+                <label>Binnenstedelijk (m/week)</label>
+                <input id="kgGraafBin" type="number" value="300" step="10" onchange="recalc()">
+              </div>
+              <div class="kg-item">
+                <label>Buitenstedelijk (m/week)</label>
+                <input id="kgGraafBui" type="number" value="500" step="10" onchange="recalc()">
+              </div>
+
+              <div class="kg-sep">Persingen &amp; boringen</div>
+              <div class="kg-item">
+                <label>Persing — uren per stuk</label>
+                <input id="kgPersingUur" type="number" value="4" step="0.5" onchange="recalc()">
+              </div>
+              <div class="kg-item">
+                <label>Boring &lt; 200m — werkdagen</label>
+                <input id="kgBoringKort" type="number" value="2" step="1" onchange="recalc()">
+              </div>
+              <div class="kg-item">
+                <label>Boring ≥ 200m — werkdagen</label>
+                <input id="kgBoringLang" type="number" value="3" step="1" onchange="recalc()">
+              </div>
+
+              <div class="kg-sep">Verdichting &amp; materieel (vaste normen)</div>
+              <div class="kg-item" style="grid-column:1/-1">
+                <label style="color:var(--left-muted);font-size:9px">Wackerstamper = ⅓ × graaftijd per verbinding &nbsp;·&nbsp; Trilplaat = verharde lengte ÷ 50 m/u</label>
+              </div>
+              <div class="kg-item">
+                <label>Kabellier (m kabel / 6 uur)</label>
+                <input id="kgKabellier" type="number" value="500" step="50" onchange="recalc()">
+              </div>
+              <div class="kg-item">
+                <label>Zuigwagen (bomen per dag)</label>
+                <input id="kgZuigwagen" type="number" value="4" step="1" onchange="recalc()">
+              </div>
+
+              <div class="kg-sep">GeoJSON type-detectie</div>
+              <div class="kg-item kg-full">
+                <label>Boring-sleutelwoorden</label>
+                <input id="kgBKW" type="text" value="boring,hdd,gestuurde" onchange="redetect()">
+              </div>
+              <div class="kg-item kg-full">
+                <label>Persing-sleutelwoorden</label>
+                <input id="kgPKW" type="text" value="persing,zinker,boog" onchange="redetect()">
+              </div>
+              <div class="kg-item kg-full">
+                <label>Te verwijderen kabel-sleutelwoorden</label>
+                <input id="kgSKW" type="text" value="uit te nemen" onchange="redetect()">
+              </div>
+              <div class="kg-item kg-full">
+                <label>Filteren / negeren (bijv. mantelbuizen)</label>
+                <input id="kgFILTER" type="text" value="mantelbuis,mantel" onchange="redetect()">
+              </div>
+              <div class="kg-item kg-full">
+                <label>Naam-property (prioriteitsvolgorde)</label>
+                <input id="kgNP" type="text" value="name,naam,id,objectid" onchange="redetect()">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- 07b Planning -->
+      <div>
+        <div class="sec">03 — Planning</div>
+        <div class="card">
+          <div class="card-hdr">
+            <span class="card-icon">📅</span>
+            <span class="card-title">Projectplanning</span>
+          </div>
+          <div style="padding:12px">
+            <div class="date-grid">
+              <div class="date-item">
+                <label>Startdatum werkzaamheden</label>
+                <input type="date" class="date-input" id="planStart" onchange="updatePlanning()">
+              </div>
+              <div class="date-item">
+                <label>Einddatum werkzaamheden</label>
+                <input type="date" class="date-input" id="planEnd" onchange="updatePlanning()">
+              </div>
+              <div class="date-duration" id="planDuration" style="display:none">
+                <div>
+                  <div class="dur-label">Doorlooptijd</div>
+                  <div class="dur-value" id="planDurVal">–</div>
+                </div>
+                <div style="text-align:right">
+                  <div class="dur-sub" id="planWeken">–</div>
+                  <div class="dur-sub" id="planDagen">–</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- 03 Verbindingen -->
+      <div>
+        <div class="sec">04 — Verbindingen (open ontgraving)</div>
+        <div class="card">
+          <div class="card-hdr">
+            <span class="card-icon">⛏</span>
+            <span class="card-title">Verbindingen</span>
+            <span class="card-add" onclick="addRow('v')" title="Rij toevoegen">+</span>
+          </div>
+          <table class="it">
+            <thead><tr>
+              <th style="width:28%">Naam / ID</th>
+              <th style="width:12%">Lengte m</th>
+              <th>Binnen</th><th>Verh.</th><th title="Percentage verharding (0–100%)">Verh. %</th><th>Bem.</th>
+              <th title="Aantal bemalingspomp(en)">💧</th>
+              <th style="width:20px"></th>
+            </tr></thead>
+            <tbody id="vBody"><tr class="empty"><td colspan="6">Geen verbindingen — laad GeoJSON of voeg handmatig toe</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- 05 Boringen -->
+      <div>
+        <div class="sec">05 — Gestuurde boringen (HDD)</div>
+        <div class="card">
+          <div class="card-hdr">
+            <span class="card-icon">🔩</span>
+            <span class="card-title">Gestuurde boringen</span>
+            <span class="card-add" onclick="addRow('b')" title="Rij toevoegen">+</span>
+          </div>
+          <table class="it">
+            <thead><tr><th style="width:55%">Naam / ID</th><th>Lengte m</th><th style="width:20px"></th></tr></thead>
+            <tbody id="bBody"><tr class="empty"><td colspan="3">Geen boringen</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- 04 Persingen -->
+      <div>
+        <div class="sec">06 — Persingen & boogzinkers</div>
+        <div class="card">
+          <div class="card-hdr">
+            <span class="card-icon">→</span>
+            <span class="card-title">Persingen</span>
+            <span class="card-add" onclick="addRow('p')" title="Rij toevoegen">+</span>
+          </div>
+          <table class="it">
+            <thead><tr><th style="width:55%">Naam / ID</th><th>Lengte m</th><th style="width:20px"></th></tr></thead>
+            <tbody id="pBody"><tr class="empty"><td colspan="3">Geen persingen</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- 07 Te verwijderen kabels -->
+      <div>
+        <div class="sec">07 — Te verwijderen kabels</div>
+        <div class="card">
+          <div class="card-hdr">
+            <span class="card-icon">⚡</span>
+            <span class="card-title">Te verwijderen kabels</span>
+            <span class="card-add" onclick="addRow('s')" title="Rij toevoegen">+</span>
+          </div>
+          <table class="it">
+            <thead><tr>
+              <th style="width:38%">Naam / ID</th>
+              <th style="width:16%">Lengte m</th>
+              <th>Zelfde sleuf</th>
+              <th>Gebied</th>
+              <th style="width:20px"></th>
+            </tr></thead>
+            <tbody id="sBody"><tr class="empty"><td colspan="5">Geen te verwijderen kabels — laad GeoJSON of voeg handmatig toe</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- 06 Verkeer -->
+      <div>
+        <div class="sec">08 — Verkeersbewegingen bouwfase</div>
+        <div class="card">
+          <div class="card-hdr">
+            <span class="card-icon">🚛</span>
+            <span class="card-title">Verkeer per werkdag</span>
+          </div>
+          <table class="it">
+            <thead><tr><th>Categorie</th><th>Vrtg./dag</th><th>Werkdagen <span style="font-weight:400;opacity:.6">(auto)</span></th><th>Ritafstand km</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="vk-lbl">Zwaar vrachtverkeer</td>
+                <td><input class="fi sm" id="vZpd" type="number" value="1" min="0" onchange="recalc()"></td>
+                <td><span class="vk-auto" id="vZwd">–</span></td>
+                <td><input class="fi sm" id="vZkm" type="number" value="20" min="0" onchange="recalc()"></td>
+              </tr>
+              <tr>
+                <td class="vk-lbl">Middelzwaar verkeer</td>
+                <td><input class="fi sm" id="vMpd" type="number" value="0" min="0" onchange="recalc()"></td>
+                <td><span class="vk-auto" id="vMwd">–</span></td>
+                <td><input class="fi sm" id="vMkm" type="number" value="15" min="0" onchange="recalc()"></td>
+              </tr>
+              <tr>
+                <td class="vk-lbl">Licht / personeel</td>
+                <td><input class="fi sm" id="vLpd" type="number" value="8" min="0" onchange="recalc()"></td>
+                <td><span class="vk-auto" id="vLwd">–</span></td>
+                <td><input class="fi sm" id="vLkm" type="number" value="10" min="0" onchange="recalc()"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <!-- 08 Overig materieel -->
+      <div>
+        <div class="sec">09 — Overig materieel</div>
+        <div class="card">
+          <div class="card-hdr">
+            <span class="card-icon">🔧</span>
+            <span class="card-title">Overig materieel — dagen</span>
+          </div>
+          <table class="it">
+            <thead><tr><th>Materieel</th><th>Dagen</th><th style="font-size:8px;color:var(--left-muted)">Basis</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="vk-lbl">🚛 Kipper</td>
+                <td><input class="overig-uren" id="oKipper" type="number" value="0" min="0" onchange="recalc()"></td>
+                <td style="font-size:9px;color:var(--left-muted)">handmatig</td>
+              </tr>
+              <tr>
+                <td class="vk-lbl">⚡ Aggregaat</td>
+                <td><input class="overig-uren" id="oAggregaat" type="number" value="0" min="0" onchange="recalc()"></td>
+                <td style="font-size:9px;color:var(--left-muted)">handmatig</td>
+              </tr>
+              <tr style="background:rgba(255,255,255,.04)">
+                <td class="vk-lbl">🪝 Kabellier</td>
+                <td><span id="oKabellierAuto" style="font-family:var(--mono);font-size:11px;color:var(--sky);padding:3px 6px;background:rgba(91,155,213,.15);border-radius:2px">–</span></td>
+                <td style="font-size:9px;color:var(--left-muted)">auto: 500m/6u</td>
+              </tr>
+              <tr>
+                <td class="vk-lbl">🌀 Zuigwagen</td>
+                <td><input class="overig-uren" id="oZuigwagenBomen" type="number" value="0" min="0" placeholder="bomen" title="Aantal te verwijderen bomen" onchange="recalc()"></td>
+                <td style="font-size:9px;color:var(--left-muted)">🌳 bomen</td>
+              </tr>
+              <tr style="background:rgba(255,255,255,.04)">
+                <td style="font-size:10px;color:var(--left-muted);padding:2px 8px 6px">↳ Zuigwagen uren</td>
+                <td><span id="oZuigwagenAuto" style="font-family:var(--mono);font-size:11px;color:var(--sky);padding:3px 6px;background:rgba(91,155,213,.15);border-radius:2px">–</span></td>
+                <td style="font-size:9px;color:var(--left-muted)">auto</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+
+      </div>
+      <div class="left-footer">
+        <button class="reset-btn" onclick="confirmReset()"><span>↺</span> Reset invoer</button>
+        <button class="reset-btn-secondary" onclick="resetVerkeer()">Verkeer reset</button>
+      </div>
+    </div>
+
+    <!-- Resizer -->
+    <div class="resizer" id="colResizer" title="Sleep om breedte aan te passen"></div>
+
+    <!-- Right panel — invoer shows input tables with summary -->
+    <div class="right">
+      <div class="right-top">
+        <div class="right-top-title">Invoer overzicht</div>
+        <span class="right-ts" id="ts"></span>
+        <button class="hdr-btn primary" onclick="goToResultaten()" style="margin-left:8px;padding:4px 14px;font-size:11px;background:var(--green,#1c7a52);border-color:var(--green,#1c7a52);color:#fff;border-radius:3px;border:none;cursor:pointer;font-family:var(--ui)">
+          Bekijk resultaten →
+        </button>
+      </div>
+      <div class="right-scroll" id="rs">
+        <div class="empty-state">
+          <div class="ei">📐</div>
+          Voeg verbindingen, boringen of persingen toe<br>om de berekening te starten.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     VIEW 3: RESULTATEN
+════════════════════════════════════════════════════════ -->
+<div class="view" id="viewResultaten">
+  <div style="background:var(--white,#fff);border-bottom:1px solid var(--line,#e5e7eb);
+       padding:10px 20px;display:flex;align-items:center;gap:12px;flex-shrink:0">
+    <div style="font-family:var(--cond,'Barlow Condensed',sans-serif);font-size:16px;font-weight:700;
+         color:var(--ink,#111827);flex:1">Resultaten &amp; Materieeloverzicht</div>
+    <button onclick="showView('invoer')" style="padding:5px 12px;border:1px solid var(--line,#e5e7eb);
+         border-radius:3px;background:var(--white,#fff);color:var(--ink,#111827);
+         font-size:11px;font-family:var(--ui);cursor:pointer">← Terug naar invoer</button>
+    <button onclick="showView('kaart')" style="padding:5px 12px;border:1px solid var(--line,#e5e7eb);
+         border-radius:3px;background:var(--white,#fff);color:var(--ink,#111827);
+         font-size:11px;font-family:var(--ui);cursor:pointer">🗺 Naar kaart</button>
+    <button onclick="exportFormatted()" style="padding:5px 14px;border:none;border-radius:3px;
+         background:var(--green,#1c7a52);color:#fff;font-size:11px;font-family:var(--ui);
+         font-weight:500;cursor:pointer">↓ Excel rapport</button>
+    <button onclick="exportCSV()" style="padding:5px 12px;border:1px solid var(--line,#e5e7eb);
+         border-radius:3px;background:var(--white,#fff);color:var(--ink,#111827);
+         font-size:11px;font-family:var(--ui);cursor:pointer">↓ CSV</button>
+  </div>
+  <div class="results-body" id="rsResultaten">
+    <div class="empty-state">
+      <div class="ei">📊</div>
+      Nog geen resultaten — laad een GeoJSON en vul de invoer in.
+    </div>
+  </div>
+</div>
+
+<script>
+
+// ─── STATE ───────────────────────────────────────────
+let verb=[], pers=[], boor=[], sloop=[];
+let uid=0;
+
+// ─── COLLAPSIBLE ─────────────────────────────────────
+function toggleColl(hdr) {
+  const arr=hdr.querySelector('.coll-arrow');
+  const bod=hdr.nextElementSibling;
+  const hint=hdr.querySelector('.coll-hint');
+  arr.classList.toggle('open');
+  bod.classList.toggle('open');
+  hint.textContent = bod.classList.contains('open') ? 'klik om te sluiten' : 'klik om te openen';
+}
+
+// ─── HELPERS ─────────────────────────────────────────
+function gv(id){ return document.getElementById(id).value; }
+function gn(id){ return parseFloat(gv(id))||0; }
+function fmt(n,d=1){ return (n||0).toLocaleString('nl-NL',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+function fmtH(n){ return Math.round(n||0).toLocaleString('nl-NL'); }
+function fmtD(n){ return (n||0).toLocaleString('nl-NL',{minimumFractionDigits:1,maximumFractionDigits:1}); }
+
+// ─── RATES ───────────────────────────────────────────
+// ── Werkdag: vast 8 uur ──────────────────────────────
+const WD = 8; // uur per werkdag
+const WEEK = 5 * WD; // 40 uur per week
+
+// Open ontgraving: m/week → uren
+function graafUren(r){
+  const mpw = r.binnen ? gn('kgGraafBin') : gn('kgGraafBui'); // m/week
+  const mpu = mpw / WEEK; // m/uur
+  return mpu > 0 ? r.length / mpu : 0;
+}
+// Persing: vaste duur per stuk (ongeacht lengte)
+function persingUren(r){ return gn('kgPersingUur') || 4; }
+// Boring: 2 werkdagen < 200m, anders 3 werkdagen
+function boringUren(r){
+  if(r.length <= 0) return 0;
+  const dagen = r.length < 200 ? (gn('kgBoringKort')||2) : (gn('kgBoringLang')||3);
+  return dagen * WD;
+}
+// Bemaling: zelfde duur als graven (geen apart kengetal)
+function bemalUren(r){ return (r.bemaling===true) ? graafUren(r) * (r.pompen||1) : 0; }
+// Sloop: extra uren = graafuren tenzij in zelfde sleuf
+function sloopUren(r){
+  if(r.zelfdeSluf) return 0;
+  const mpw = r.binnen ? gn('kgGraafBin') : gn('kgGraafBui');
+  const mpu = mpw / WEEK;
+  return mpu > 0 ? r.length / mpu : 0;
+}
+// Verdichting: vaste normen
+function wackerUren(r){ return graafUren(r) / 3; }  // 1/3 van graaftijd, altijd nodig
+function trilUren(r)  { if(!r.verhard) return 0; return (r.length * (r.verhardingPct||100) / 100) / 50; } // 50 m/u, pct verharding
+// Kabellier: 500m kabel per 6 uur (instelbaar)
+function kabellierUren(totLen){ const n=gn('kgKabellier')||500; return n>0 ? (totLen/n)*6 : 0; }
+// Zuigwagen: X bomen per dag = 8/X uur per boom
+function zuigwagenUren(totBomen){ const n=gn('kgZuigwagen')||4; return n>0 ? totBomen*(WD/n) : 0; }
+function werkdag(){ return WD; }
+
+// ─── GEOJSON ─────────────────────────────────────────
+function haversine([a,b],[c,d]){
+  const R=6371000,r=Math.PI/180;
+  const dLat=(d-b)*r,dLng=(c-a)*r;
+  const x=Math.sin(dLat/2)**2+Math.cos(b*r)*Math.cos(d*r)*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+function euclidean([x1,y1],[x2,y2]){ return Math.sqrt((x2-x1)**2+(y2-y1)**2); }
+function calcLen(cs){
+  if(!cs||cs.length<2) return 0;
+  const [x,y]=cs[0];
+  const fn=(x>0&&x<300000&&y>300000&&y<700000)?euclidean:haversine;
+  let t=0; for(let i=0;i<cs.length-1;i++) t+=fn(cs[i],cs[i+1]);
+  return t;
+}
+function detectType(props){
+  const fkw=gv('kgFILTER').split(',').map(s=>s.trim().toLowerCase());
+  const bkw=gv('kgBKW').split(',').map(s=>s.trim().toLowerCase());
+  const pkw=gv('kgPKW').split(',').map(s=>s.trim().toLowerCase());
+  const skw=gv('kgSKW').split(',').map(s=>s.trim().toLowerCase());
+  const s=JSON.stringify(props||{}).toLowerCase();
+  if(fkw.some(k=>k&&s.includes(k))) return 'ignore';
+  if(skw.some(k=>k&&s.includes(k))) return 's';
+  if(pkw.some(k=>k&&s.includes(k))) return 'p';
+  if(bkw.some(k=>k&&s.includes(k))) return 'b';
+  return 'v';
+}
+function getName(props,idx){
+  const keys=gv('kgNP').split(',').map(s=>s.trim().toLowerCase());
+  for(const k of keys){
+    const fk=Object.keys(props||{}).find(pk=>pk.toLowerCase()===k);
+    if(fk&&props[fk]!=null) return String(props[fk]);
+  }
+  return `Feature ${idx+1}`;
+}
+function dropGJ(e){
+  e.preventDefault(); document.getElementById('dz').classList.remove('over');
+  if(e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]);
+}
+function fileInput(e){ if(e.target.files[0]) readFile(e.target.files[0]); }
+function readFile(f){
+  const r=new FileReader();
+  r.onload=e=>{ try{ parseGJ(JSON.parse(e.target.result),f.name); } catch(e2){ alert('Ongeldig JSON: '+e2.message); } };
+  r.readAsText(f);
+}
+function parseGJ(gj,fn){
+  let raw=[];
+  if(gj.type==='FeatureCollection') raw=gj.features;
+  else if(gj.type==='Feature') raw=[gj];
+  else{ alert('Geen geldige FeatureCollection.'); return; }
+  let nv=0,np=0,nb=0,ns=0,nfilt=0;
+  raw.forEach((f,i)=>{
+    const g=f.geometry; if(!g) return;
+    let cs=[];
+    if(g.type==='LineString') cs=g.coordinates;
+    else if(g.type==='MultiLineString') cs=g.coordinates.flat();
+    else return;
+    const props=f.properties||{};
+    const len=calcLen(cs), type=detectType(props), name=getName(props,i);
+    if(type==='ignore'){ nfilt++; return; }
+    if(type==='s'){ sloop.push({id:uid++,name,length:len,zelfdeSluf:false,binnen:false}); ns++; }
+    else if(type==='p'){ pers.push({id:uid++,name,length:len}); np++; }
+    else if(type==='b'){ boor.push({id:uid++,name,length:len}); nb++; }
+    else{ verb.push({id:uid++,name,length:len,binnen:false,verhard:false,verhardingPct:100,bemaling:false,pompen:1}); nv++; }
+  });
+  const filtTxt = nfilt>0 ? ` · ${nfilt} gefilterd (mantelbuis)` : '';
+  document.getElementById('dzTxt').textContent=`✓ ${fn} — ${nv} verbindingen · ${nb} boringen · ${np} persingen · ${ns} sloop${filtTxt}`;
+  renderTables(); recalc();
+}
+function redetect(){ recalc(); }
+
+// ─── PLANNING ─────────────────────────────────────────
+function updatePlanning() {
+  const s = document.getElementById('planStart').value;
+  const e = document.getElementById('planEnd').value;
+  const dur = document.getElementById('planDuration');
+  if (!s || !e) { dur.style.display='none'; return; }
+  const start = new Date(s), end = new Date(e);
+  if (end <= start) { dur.style.display='none'; return; }
+  const ms = end - start;
+  const dagen = Math.round(ms / 86400000);
+  const weken = Math.floor(dagen / 7);
+  const restDagen = dagen % 7;
+  // Werkdagen (mon-fri)
+  let werkdagen = 0;
+  const d = new Date(start);
+  while (d <= end) {
+    const dw = d.getDay();
+    if (dw !== 0 && dw !== 6) werkdagen++;
+    d.setDate(d.getDate() + 1);
+  }
+  dur.style.display = 'flex';
+  document.getElementById('planDurVal').textContent =
+    weken + ' weken' + (restDagen ? ' en ' + restDagen + ' dagen' : '');
+  document.getElementById('planWeken').textContent = werkdagen + ' werkdagen';
+  document.getElementById('planDagen').textContent = dagen + ' kalenderdagen';
+  recalc();
+}
+
+// ─── ROW MANAGEMENT ──────────────────────────────────
+function addRow(t){
+  const id=uid++;
+  if(t==='v') verb.push({id,name:'',length:0,binnen:false,verhard:false,verhardingPct:100,bemaling:false,pompen:1});
+  else if(t==='p') pers.push({id,name:'',length:0});
+  else if(t==='s') sloop.push({id,name:'',length:0,zelfdeSluf:false,binnen:false});
+  else boor.push({id,name:'',length:0});
+  renderTables(); recalc();
+}
+function delRow(t,id){
+  if(t==='v') verb=verb.filter(r=>r.id!==id);
+  else if(t==='p') pers=pers.filter(r=>r.id!==id);
+  else if(t==='s') sloop=sloop.filter(r=>r.id!==id);
+  else boor=boor.filter(r=>r.id!==id);
+  renderTables(); recalc();
+}
+function setField(t,id,f,val){
+  const arr=t==='v'?verb:t==='p'?pers:t==='s'?sloop:boor;
+  const r=arr.find(x=>x.id===id); if(!r) return;
+  r[f]= f==='length'?parseFloat(val)||0 : f==='pompen'?Math.max(1,parseInt(val)||1) : f==='verhardingPct'?Math.min(100,Math.max(0,parseInt(val)||0)) : val;
+  recalc();
+}
+function toggleFlag(id,flag,type='v'){
+  const arr=type==='s'?sloop:verb;
+  const r=arr.find(x=>x.id===id); if(!r) return;
+  r[flag]=!r[flag];
+  renderTables(); recalc();
+}
+
+function renderTables(){
+  // Verbindingen
+  const vb=document.getElementById('vBody');
+  vb.innerHTML = verb.length ? verb.map(r=>`
+    <tr>
+      <td><input class="fi nm" value="${r.name}" placeholder="Naam / ID" onchange="setField('v',${r.id},'name',this.value)"></td>
+      <td><input class="fi nr" type="number" value="${r.length?r.length.toFixed(1):''}" min="0" placeholder="0" onchange="setField('v',${r.id},'length',this.value)"></td>
+      <td><span class="chip ${r.binnen?'on binnen':''}" onclick="toggleFlag(${r.id},'binnen')">${r.binnen?'● B':'○ B'}</span></td>
+      <td><span class="chip ${r.verhard?'on verhard':''}" onclick="toggleFlag(${r.id},'verhard')">${r.verhard?'● V':'○ V'}</span></td>
+      <td>${r.verhard?`<input class="fi nr" type="number" value="${r.verhardingPct??100}" min="0" max="100" style="width:46px" title="Percentage verharding" onchange="setField('v',${r.id},'verhardingPct',this.value)"><span style='font-size:9px;color:var(--left-muted)'>%</span>`:'<span style="font-size:9px;color:var(--left-muted);padding:0 4px">–</span>'}</td>
+      <td><span class="chip ${r.bemaling?'on bemaling':''}" onclick="toggleFlag(${r.id},'bemaling')">${r.bemaling?'● Bem':'○ Bem'}</span></td>
+      <td>${r.bemaling?`<input class="fi nr" type="number" value="${r.pompen||1}" min="1" max="10" style="width:40px" title="Aantal pompen" onchange="setField('v',${r.id},'pompen',this.value)">`:''}</td>
+      <td><button class="del" onclick="delRow('v',${r.id})">✕</button></td>
+    </tr>`) .join('')
+    : '<tr class="empty"><td colspan="6">Geen verbindingen — laad GeoJSON of voeg handmatig toe</td></tr>';
+
+  // Persingen
+  const pb=document.getElementById('pBody');
+  pb.innerHTML = pers.length ? pers.map(r=>`
+    <tr>
+      <td><input class="fi nm" value="${r.name}" placeholder="Naam / ID" onchange="setField('p',${r.id},'name',this.value)"></td>
+      <td><input class="fi nr" type="number" value="${r.length?r.length.toFixed(1):''}" min="0" placeholder="0" onchange="setField('p',${r.id},'length',this.value)"></td>
+      <td><button class="del" onclick="delRow('p',${r.id})">✕</button></td>
+    </tr>`).join('')
+    : '<tr class="empty"><td colspan="3">Geen persingen</td></tr>';
+
+  // Boringen
+  const bb=document.getElementById('bBody');
+  bb.innerHTML = boor.length ? boor.map(r=>`
+    <tr>
+      <td><input class="fi nm" value="${r.name}" placeholder="Naam / ID" onchange="setField('b',${r.id},'name',this.value)"></td>
+      <td><input class="fi nr" type="number" value="${r.length?r.length.toFixed(1):''}" min="0" placeholder="0" onchange="setField('b',${r.id},'length',this.value)"></td>
+      <td><button class="del" onclick="delRow('b',${r.id})">✕</button></td>
+    </tr>`).join('')
+    : '<tr class="empty"><td colspan="3">Geen boringen</td></tr>';
+
+  // Sloop
+  const sb=document.getElementById('sBody');
+  sb.innerHTML = sloop.length ? sloop.map(r=>`
+    <tr>
+      <td><input class="fi nm" value="${r.name}" placeholder="Naam / ID" onchange="setField('s',${r.id},'name',this.value)"></td>
+      <td><input class="fi nr" type="number" value="${r.length?r.length.toFixed(1):''}" min="0" placeholder="0" onchange="setField('s',${r.id},'length',this.value)"></td>
+      <td><span class="chip ${r.zelfdeSluf?'on sloop':''}" onclick="toggleFlag(${r.id},'zelfdeSluf','s')">${r.zelfdeSluf?'● Ja':'○ Nee'}</span></td>
+      <td><span class="chip ${r.binnen?'on binnen':''}" onclick="toggleFlag(${r.id},'binnen','s')">${r.binnen?'● B':'○ Bui'}</span></td>
+      <td><button class="del" onclick="delRow('s',${r.id})">✕</button></td>
+    </tr>`).join('')
+    : '<tr class="empty"><td colspan="5">Geen te verwijderen kabels — laad GeoJSON of voeg handmatig toe</td></tr>';
+}
+
+// ─── RECALC & RENDER OUTPUT ───────────────────────────
+function recalc(){
+  const rs=document.getElementById('rs');
+  const hasData=verb.length||pers.length||boor.length||sloop.length;
+  if(!hasData){
+    rs.innerHTML='<div class="empty-state"><div class="ei">📐</div>Voeg verbindingen, boringen of persingen toe<br>om de berekening te starten.</div>';
+    return;
+  }
+
+  // Totalen
+  const tLV=verb.reduce((s,r)=>s+r.length,0);
+  const tUG=verb.reduce((s,r)=>s+graafUren(r),0);
+  const tUBem=verb.reduce((s,r)=>s+bemalUren(r),0);
+  const tUWack=verb.reduce((s,r)=>s+wackerUren(r),0);
+  const tUTril=verb.reduce((s,r)=>s+trilUren(r),0);
+  const tLB=boor.reduce((s,r)=>s+r.length,0);
+  const tUB=boor.reduce((s,r)=>s+boringUren(r),0);
+  const tLP=pers.reduce((s,r)=>s+r.length,0);
+  const tUP=pers.reduce((s,r)=>s+persingUren(r),0);
+  // Sloop
+  const tUS=sloop.reduce((s,r)=>s+sloopUren(r),0);
+  const nSloopExtra=sloop.filter(r=>!r.zelfdeSluf).length;
+  // Overig materieel
+  const oK=gn('oKipper')*WD, oAgg=gn('oAggregaat')*WD;
+  const totBomen=parseInt(document.getElementById('oZuigwagenBomen')?.value)||0;
+  const oKab=kabellierUren(tLV);   // auto: 500m/6u
+  const oZ=zuigwagenUren(totBomen); // auto: 4 bomen/dag
+  const tOverig=oK+oKab+oAgg+oZ;
+  // Update auto spans in left panel
+  const kbEl=document.getElementById('oKabellierAuto');
+  if(kbEl) kbEl.textContent=oKab>0?fmtD(oKab/WD)+' dgn':'–';
+  const zzEl=document.getElementById('oZuigwagenAuto');
+  if(zzEl) zzEl.textContent=oZ>0?fmtD(oZ/WD)+' dgn':'–';
+
+  const tAll=tUG+tUBem+tUWack+tUTril+tUB+tUP+tUS+tOverig;
+
+  // Verkeer — werkdagen = totaal werkdagen verbindingen
+  const totWD = verb.length
+    ? Math.ceil(verb.reduce((s,r)=>s+(graafUren(r)+bemalUren(r)+wackerUren(r)+trilUren(r)),0)/werkdag())
+    : 0;
+  ['vZwd','vMwd','vLwd'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.textContent = totWD>0 ? totWD.toLocaleString('nl-NL') : '–';
+  });
+  const vZ=gn('vZpd')*totWD, vM=gn('vMpd')*totWD, vL=gn('vLpd')*totWD;
+  const totRit=(vZ+vM+vL)*2;
+
+  // ── KPI
+  // Planning summary banner
+  const planS2 = document.getElementById('planStart').value;
+  const planE2 = document.getElementById('planEnd').value;
+  let planHtml = '';
+  if (planS2 && planE2) {
+    const sd = new Date(planS2), ed = new Date(planE2);
+    const fmtDate = d => d.toLocaleDateString('nl-NL', {day:'numeric',month:'long',year:'numeric'});
+    planHtml = `<div style="background:var(--white);border:1px solid var(--line);border-radius:4px;padding:10px 16px;display:flex;align-items:center;gap:16px;border-left:3px solid var(--blue)">
+      <span style="font-size:16px">📅</span>
+      <div style="flex:1">
+        <div style="font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)">Projectplanning</div>
+        <div style="font-size:13px;font-weight:600;color:var(--ink);margin-top:2px">${fmtDate(sd)} — ${fmtDate(ed)}</div>
+      </div>
+      <div id="planDurRight" style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--muted)"></div>
+    </div>`;
+    // Fill right side
+    setTimeout(() => {
+      const el = document.getElementById('planDurRight');
+      if (!el) return;
+      const ms = ed - sd, d2 = Math.round(ms/86400000);
+      let wk = 0; const dt = new Date(sd);
+      while(dt<=ed){if(dt.getDay()!==0&&dt.getDay()!==6)wk++;dt.setDate(dt.getDate()+1);}
+      el.innerHTML = Math.floor(d2/7)+'w '+d2%7+'d kalender<br>'+wk+' werkdagen';
+    }, 0);
+  }
+
+  let html = planHtml + `<div class="kpi-row">
+    <div class="kpi"><div class="kl">Verbindingen</div><div class="kv">${fmt(tLV/1000)} km</div><div class="ks">${verb.length} tracés · ${fmtH(tUG)} graafuren</div></div>
+    <div class="kpi or"><div class="kl">Boringen</div><div class="kv">${fmtH(tUB)} u</div><div class="ks">${boor.length} st · ${fmtD(tUB/WD)} dgn</div></div>
+    <div class="kpi or"><div class="kl">Persingen</div><div class="kv">${fmtH(tUP)} u</div><div class="ks">${pers.length} st · ${fmtD(tUP/WD)} dgn</div></div>
+    <div class="kpi gr"><div class="kl">Bemaling</div><div class="kv">${fmtH(tUBem)} u</div><div class="ks">${verb.filter(r=>r.bemaling).length} tracés · ${verb.filter(r=>r.bemaling).reduce((s,r)=>s+(r.pompen||1),0)} pompen</div></div>
+    <div class="kpi am"><div class="kl">Verdichting</div><div class="kv">${fmtH(tUWack+tUTril)} u</div><div class="ks">${verb.length} tracés wacker · ${verb.filter(r=>r.verhard).length} trilplaat</div></div>
+    <div class="kpi" style="border-top-color:#dc2626"><div class="kl">Sloop</div><div class="kv">${fmtH(tUS)} u</div><div class="ks">${sloop.length} kabels · ${nSloopExtra} extra sleuf</div></div>
+    <div class="kpi"><div class="kl">Totaal uren</div><div class="kv">${fmtH(tAll)}</div><div class="ks">alle materieel incl. overig</div></div>
+  </div>` + (planHtml ? '' : '');
+
+  // ── Verbindingen tabel
+  if(verb.length){
+    const binBui=gn('kgGraafBin')!==gn('kgGraafBui');
+    html+=`<div class="os">
+      <div class="os-hdr">
+        <span class="os-icon">⛏</span>
+        <span class="os-title">Verbindingen — open ontgraving</span>
+        <span class="os-badge">${verb.length} tracés</span>
+      </div>
+      <table class="ot">
+        <thead><tr>
+          <th>Naam</th><th class="r">Lengte m</th>
+          <th class="r">Graafsnelheid</th>
+          <th class="r">Graafuren</th>
+          <th class="r">Bemaling u</th>
+          <th class="r">Wacker u</th>
+          <th class="r">Trilplaat u</th>
+          <th class="r">Werkdagen</th>
+          <th>Kenmerken</th>
+        </tr></thead>
+        <tbody>
+          ${verb.map(r=>{
+            const gu=graafUren(r),bu=bemalUren(r),wu=wackerUren(r),tu=trilUren(r);
+            const totU=gu+bu+wu+tu;
+            const tags=[];
+            if(r.binnen) tags.push('<span class="tag bi">Binnen</span>');
+            else tags.push('<span class="tag" style="background:#f3f4f6;color:#6b7280">Buiten</span>');
+            if(r.verhard) tags.push('<span class="tag v">Verhard</span>');
+            if(r.bemaling) tags.push('<span class="tag g">Bemaling</span>');
+            return `<tr>
+              <td class="nm">${r.name||'–'}</td>
+              <td class="r mu">${fmt(r.length)}</td>
+              <td class="r mu" style="font-size:10px">${fmtH(r.binnen?gn('kgGraafBin'):gn('kgGraafBui'))} m/wk</td>
+              <td class="r hi">${fmtH(gu)}</td>
+              <td class="r ${bu?'hi':'mu'}">${bu?fmtH(bu)+(r.pompen>1?' ('+r.pompen+'×)':''):'–'}</td>
+              <td class="r ${wu?'hi':'mu'}">${wu?fmtH(wu):'–'}</td>
+              <td class="r ${tu?'hi':'tu'}">${tu?fmtH(tu):'–'}</td>
+              <td class="r">${fmtD(totU/werkdag())}</td>
+              <td>${tags.join(' ')}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      <div class="footnote">
+        Productie: binnenstedelijk ${fmtH(gn('kgGraafBin'))} m/week · buitenstedelijk ${fmtH(gn('kgGraafBui'))} m/week &nbsp;|&nbsp;
+        Wacker = ⅓ × graaftijd (altijd) &nbsp;|&nbsp; Trilplaat = (lengte × verh.%) ÷ 50 m/u (alleen verhard) &nbsp;|&nbsp; Werkdag = ${WD}u
+      </div>
+    </div>`;
+  }
+
+  // ── Aanvullend materieel
+  const vBem=verb.filter(r=>r.bemaling);
+  const vVerh=verb.filter(r=>r.verhard);  // trilplaat still only verhard
+  const matRows=[];
+  if(vBem.length) matRows.push({icon:'💧',naam:'Bemalingspomp',tag:'g',tl:'Bemaling',
+    uren:tUBem,gr:`Gelijk aan graaftijd (geen apart kengetal)`,
+    tr:vBem.map(r=>r.name||'–').join(', ')});
+  if(vVerh.length){
+    matRows.push({icon:'🔨',naam:'Wackerstamper',tag:'v',tl:'Verhard',
+      uren:tUWack,gr:'⅓ × graaftijd (alle verbindingen)',
+      tr:vVerh.map(r=>r.name||'–').join(', ')});
+    matRows.push({icon:'⬛',naam:'Trilplaat straatwerk',tag:'v',tl:'Verhard',
+      uren:tUTril,gr:'verharde lengte ÷ 50 m/u',
+      tr:vVerh.map(r=>r.name||'–').join(', ')});
+  }
+  if(matRows.length){
+    html+=`<div class="os">
+      <div class="os-hdr">
+        <span class="os-icon">🔧</span>
+        <span class="os-title">Aanvullend materieel</span>
+        <span class="os-badge gr">${matRows.length} machines</span>
+      </div>
+      <table class="ot">
+        <thead><tr><th>Materieel</th><th>Trigger</th><th class="r">Totaal uren</th><th class="r">Werkdagen</th><th>Grondslag</th><th>Tracés</th></tr></thead>
+        <tbody>${matRows.map(r=>`<tr>
+          <td class="nm">${r.icon} ${r.naam}</td>
+          <td><span class="tag ${r.tag}">${r.tl}</span></td>
+          <td class="r hi">${fmtH(r.uren)} u</td>
+          <td class="r">${fmtD(r.uren/werkdag())} d</td>
+          <td style="font-size:10px;color:var(--muted)">${r.gr}</td>
+          <td style="font-size:10px;color:var(--ink-soft);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.tr}">${r.tr}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+  }
+
+  // ── Te verwijderen kabels
+  if(sloop.length){
+    html+=`<div class="os">
+      <div class="os-hdr">
+        <span class="os-icon">⚡</span>
+        <span class="os-title">Te verwijderen kabels</span>
+        <span class="os-badge" style="background:#fef2f2;color:#b91c1c">${sloop.length} kabels</span>
+      </div>
+      <table class="ot">
+        <thead><tr>
+          <th>Naam</th><th class="r">Lengte m</th>
+          <th>Zelfde sleuf</th><th>Gebied</th>
+          <th class="r">Extra uren</th><th class="r">Extra werkdagen</th>
+        </tr></thead>
+        <tbody>
+          ${sloop.map(r=>{
+            const u=sloopUren(r);
+            return `<tr>
+              <td class="nm">${r.name||'–'}</td>
+              <td class="r mu">${fmt(r.length)}</td>
+              <td><span style="font-size:10px;padding:2px 7px;border-radius:2px;background:${r.zelfdeSluf?'var(--green-lt)':'#fef2f2'};color:${r.zelfdeSluf?'var(--green)':'#b91c1c'};font-weight:600">${r.zelfdeSluf?'✓ Ja, geen extra sleuf':'✗ Aparte sleuf'}</span></td>
+              <td style="font-size:10px;color:var(--muted)">${r.binnen?'Binnenstedelijk':'Buitenstedelijk'}</td>
+              <td class="r ${u?'hi':'mu'}">${u?fmtH(u):'0'}</td>
+              <td class="r ${u?'':'mu'}">${u?fmtD(u/WD):'–'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      <div class="footnote">Zelfde sleuf = kabel wordt verwijderd tijdens dezelfde graafwerkzaamheden → 0 extra uren. Aparte sleuf = zelfde tarief als open ontgraving.</div>
+    </div>`;
+  }
+
+  // ── Overig materieel
+  const overigRows=[
+    {icon:'🚛',naam:'Kipper',uren:oK,basis:'handmatig'},
+    {icon:'🪝',naam:'Kabellier',uren:oKab,basis:`${(tLV/1000).toFixed(2)} km ÷ ${gn('kgKabellier')||500} m × 6u`},
+    {icon:'⚡',naam:'Aggregaat',uren:oAgg,basis:'handmatig'},
+    {icon:'🌀',naam:`Zuigwagen (${totBomen} bomen)`,uren:oZ,basis:`${totBomen} bomen × ${+(WD/(gn('kgZuigwagen')||4)).toFixed(1)} u/boom`},
+  ].filter(r=>r.uren>0);
+  if(overigRows.length){
+    html+=`<div class="os">
+      <div class="os-hdr">
+        <span class="os-icon">🔧</span>
+        <span class="os-title">Overig materieel</span>
+        <span class="os-badge">${overigRows.length} machines</span>
+      </div>
+      <table class="ot">
+        <thead><tr><th>Materieel</th><th class="r">Dagen</th><th class="r">Uren</th><th>Grondslag</th></tr></thead>
+        <tbody>
+          ${overigRows.map(r=>`<tr>
+            <td class="nm">${r.icon} ${r.naam}</td>
+            <td class="r">${fmtD(r.uren/WD)} dgn</td>
+            <td class="r hi">${fmtH(r.uren)} u</td>
+            <td style="font-size:10px;color:var(--muted)">${r.basis}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }
+
+  // ── Boringen & Persingen
+  const allBP=[...boor.map(r=>({...r,cat:'boring'})),...pers.map(r=>({...r,cat:'persing'}))];
+  if(allBP.length){
+    html+=`<div class="os">
+      <div class="os-hdr">
+        <span class="os-icon">🔩</span>
+        <span class="os-title">Gestuurde boringen &amp; Persingen</span>
+        <span class="os-badge am">${allBP.length} stuks</span>
+      </div>
+      <table class="ot">
+        <thead><tr><th>Naam</th><th>Type</th><th class="r">Lengte m</th><th class="r">Norm</th><th class="r">Uren</th><th class="r">Werkdagen</th></tr></thead>
+        <tbody>${allBP.map(r=>{
+          const u=r.cat==='boring'?boringUren(r):persingUren(r);
+          const dagInfo = r.cat==='boring'
+            ? (r.length<200 ? (gn('kgBoringKort')||2)+' dgn (kort)' : (gn('kgBoringLang')||3)+' dgn (lang)')
+            : (gn('kgPersingUur')||4)+' u/stuk';
+          return `<tr>
+            <td class="nm">${r.name||'–'}</td>
+            <td style="font-size:10px;color:var(--muted)">${r.cat==='boring'?'Gest. boring':'Persing'}</td>
+            <td class="r mu">${r.cat==='boring'?fmt(r.length):'–'}</td>
+            <td class="r mu" style="font-size:10px">${dagInfo}</td>
+            <td class="r hi">${fmtH(u)}</td>
+            <td class="r">${fmtD(u/werkdag())}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>`;
+  }
+
+  // ── Verkeer
+  if(vZ||vM||vL){
+    const rows=[
+      {lbl:'Zwaar vrachtverkeer',pd:gn('vZpd'),wd:totWD,tot:vZ,km:gn('vZkm')},
+      {lbl:'Middelzwaar verkeer',pd:gn('vMpd'),wd:totWD,tot:vM,km:gn('vMkm')},
+      {lbl:'Licht / personeel',pd:gn('vLpd'),wd:totWD,tot:vL,km:gn('vLkm')},
+    ].filter(r=>r.tot>0);
+    const totKm=rows.reduce((s,r)=>s+r.tot*2*r.km,0);
+    html+=`<div class="os">
+      <div class="os-hdr">
+        <span class="os-icon">🚛</span>
+        <span class="os-title">Verkeersbewegingen bouwfase</span>
+        <span class="os-badge">${fmtH(totRit)} ritten</span>
+      </div>
+      <table class="ot">
+        <thead><tr><th>Categorie</th><th class="r">Per werkdag</th><th class="r">Werkdagen</th><th class="r">Enkel. ritten</th><th class="r">Totaal v/h</th><th class="r">Totale afstand</th></tr></thead>
+        <tbody>
+          ${rows.map(r=>`<tr>
+            <td class="nm">${r.lbl}</td>
+            <td class="r mu">${fmtH(r.pd)}</td>
+            <td class="r mu">${fmtH(r.wd)}</td>
+            <td class="r mu">${fmtH(r.tot)}</td>
+            <td class="r hi">${fmtH(r.tot*2)}</td>
+            <td class="r mu">${fmtH(r.tot*2*r.km)} km</td>
+          </tr>`).join('')}
+          <tr class="tot">
+            <td class="nm">Totaal</td><td class="r"></td><td class="r"></td>
+            <td class="r">${fmtH(vZ+vM+vL)}</td>
+            <td class="r hi">${fmtH(totRit)}</td>
+            <td class="r">${fmtH(totKm)} km</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
+  }
+
+  rs.innerHTML=html;
+  document.getElementById('ts').textContent='Bijgewerkt '+new Date().toLocaleTimeString('nl-NL');
+}
+
+// ─── EXPORT ──────────────────────────────────────────
+function exportCSV(){
+  const rows=[['Type','Naam','Lengte_m','Graafsnelheid_m_u','Graafuren','Bemalingsuren','Wackeruren','Trilplaaturen','Werkdagen','Binnenstedelijk','Verhard','Bemaling']];
+  verb.forEach(r=>{
+    const gu=graafUren(r),bu=bemalUren(r),wu=wackerUren(r),tu=trilUren(r);
+    rows.push(['Verbinding',r.name||'',fmt(r.length,2),(r.binnen?gn('kgGraafBin'):gn('kgGraafBui'))+'m/week',fmtH(gu),fmtH(bu),fmtH(wu),fmtH(tu),fmtD((gu+bu+wu+tu)/werkdag()),r.binnen?'Ja':'Nee',r.verhard?'Ja':'Nee',r.bemaling?'Ja':'Nee']);
+  });
+  boor.forEach(r=>{ const u=boringUren(r); rows.push(['Gestuurde boring',r.name||'',fmt(r.length,2),(r.length<200?(gn('kgBoringKort')||2)+'dgn':(gn('kgBoringLang')||3)+'dgn')+(r.length>0?' ('+fmt(r.length)+'m)':'')+'',fmtH(u),'–','–','–',fmtD(u/werkdag()),'-','-','-']); });
+  pers.forEach(r=>{ const u=persingUren(r); rows.push(['Persing',r.name||'',fmt(r.length,2),(gn('kgPersingUur')||4)+'u/stuk',fmtH(u),'–','–','–',fmtD(u/werkdag()),'-','-','-']); });
+  const csv=rows.map(r=>r.map(v=>`"${v}"`).join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);
+  a.download='tracé_planning.csv'; a.click();
+}
+
+// ─── CLEAR / RESET ────────────────────────────────────
+function clearAll(){
+  verb=[]; pers=[]; boor=[]; sloop=[]; uid=0;
+  document.getElementById('dzTxt').textContent='';
+  document.getElementById('gjf').value='';
+  ['oKipper','oAggregaat','oZuigwagenBomen'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value=0;
+  });
+  ['planStart','planEnd'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  document.getElementById('planDuration').style.display='none';
+  renderTables(); recalc();
+}
+
+function confirmReset(){
+  const hasData = verb.length||pers.length||boor.length;
+  if(!hasData){ clearAll(); return; }
+  if(document.getElementById('resetConfirm')) return;
+  const banner = document.createElement('div');
+  banner.id='resetConfirm';
+  banner.style.cssText='position:absolute;bottom:57px;left:0;right:0;background:#fff;border-top:1px solid #fca5a5;padding:10px 14px;display:flex;align-items:center;gap:8px;z-index:10;box-shadow:0 -2px 8px rgba(0,0,0,.08)';
+  banner.innerHTML=`
+    <span style="flex:1;font-size:12px;color:#374151">Alle invoer verwijderen?</span>
+    <button onclick="doReset()" style="padding:5px 14px;background:#b91c1c;border:none;border-radius:3px;color:#fff;font-size:12px;font-family:var(--ui);font-weight:500;cursor:pointer">Ja, wis alles</button>
+    <button onclick="cancelReset()" style="padding:5px 12px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:3px;color:#374151;font-size:12px;font-family:var(--ui);cursor:pointer">Annuleer</button>
+  `;
+  document.querySelector('.left').style.position='relative';
+  document.querySelector('.left').appendChild(banner);
+}
+
+function doReset(){ cancelReset(); clearAll(); }
+function cancelReset(){ const el=document.getElementById('resetConfirm'); if(el) el.remove(); }
+
+function resetVerkeer(){
+  [['vZpd',1],['vZkm',20],
+   ['vMpd',0],['vMkm',15],
+   ['vLpd',8],['vLkm',10]].forEach(([id,v])=>document.getElementById(id).value=v);
+  recalc();
+}
+
+
+
+// ─── AERIUS TEMPLATE BASE64 ─────────────────────────────────────
+const AERIUS_TEMPLATE_B64 = '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';
+
+// ─── FORMATTED EXCEL EXPORT ──────────────────────────────────────
+function exportFormatted() {
+  if (!window.XLSX) { alert('SheetJS (XLSX) niet geladen'); return; }
+
+  const WD = 8;
+  const wb = XLSX.utils.book_new();
+
+  // ── HELPERS ─────────────────────────────────────────────────
+  function s(v, bold, bg, color, border, halign, wrap, fmt) {
+    const cell = { v, t: typeof v === 'number' ? 'n' : 's' };
+    if (fmt) cell.z = fmt;
+    cell.s = {
+      font: { name: 'Calibri', sz: 10, bold: !!bold, color: { rgb: color || '111827' } },
+      fill: bg ? { patternType: 'solid', fgColor: { rgb: bg } } : undefined,
+      alignment: { horizontal: halign || 'left', vertical: 'center', wrapText: !!wrap },
+      border: border ? {
+        top:    { style: 'thin', color: { rgb: 'E5E7EB' } },
+        bottom: { style: 'thin', color: { rgb: 'E5E7EB' } },
+        left:   { style: 'thin', color: { rgb: 'E5E7EB' } },
+        right:  { style: 'thin', color: { rgb: 'E5E7EB' } },
+      } : undefined
+    };
+    return cell;
+  }
+  function hdr(v, bg) { return s(v, true, bg || '0F3460', 'FFFFFF', true, 'left', true); }
+  function subhdr(v) { return s(v, true, '1D5FA6', 'FFFFFF', true, 'left'); }
+  function colhdr(v) { return s(v, true, 'E8F1FB', '1D5FA6', true, 'center', true); }
+  function num(v, bold, bg) { return s(typeof v === 'number' ? v : (parseFloat(v)||0), bold, bg, bold ? '1D5FA6' : '374151', true, 'center'); }
+  function lbl(v, bg) { return s(v, false, bg || 'FFFFFF', '374151', true, 'left'); }
+  function dim(v) { return s(v||'–', false, 'F0F4F8', '6B7280', true, 'center'); }
+  function empty() { return s('', false, 'F0F4F8', '6B7280', true); }
+
+  // Pre-calc all totals (same as recalc)
+  const totGraaf   = verb.reduce((a,r) => a + graafUren(r), 0);
+  const totBem     = verb.reduce((a,r) => a + bemalUren(r), 0);
+  const totWack    = verb.reduce((a,r) => a + wackerUren(r), 0);
+  const totTril    = verb.reduce((a,r) => a + trilUren(r), 0);
+  const totSloop   = sloop.reduce((a,r) => a + sloopUren(r), 0);
+  const totBoor    = boor.reduce((a,r) => a + boringUren(r), 0);
+  const totPers    = pers.reduce((a,r) => a + persingUren(r), 0);
+  const totLenVerb = verb.reduce((a,r) => a + r.length, 0);
+  const totBomen   = parseInt(document.getElementById('oZuigwagenBomen')?.value)||0;
+  const oK         = gn('oKipper') * WD;
+  const oAgg       = gn('oAggregaat') * WD;
+  const oKab       = kabellierUren(totLenVerb);
+  const oZ         = zuigwagenUren(totBomen);
+  const totOverig  = oK + oAgg + oKab + oZ;
+  const totAll     = totGraaf + totBem + totWack + totTril + totSloop + totBoor + totPers + totOverig;
+  const totWD_verk = verb.length
+    ? Math.ceil(verb.reduce((a,r)=>a+(graafUren(r)+bemalUren(r)+wackerUren(r)+trilUren(r)),0)/WD) : 0;
+
+  const planS = document.getElementById('planStart').value;
+  const planE = document.getElementById('planEnd').value;
+  const dateStr = planS && planE
+    ? new Date(planS).toLocaleDateString('nl-NL',{day:'2-digit',month:'long',year:'numeric'}) +
+      ' t/m ' + new Date(planE).toLocaleDateString('nl-NL',{day:'2-digit',month:'long',year:'numeric'})
+    : 'Datum niet ingevuld';
+
+  // ════════════════════════════════════════════════════════════
+  // SHEET 1 — PROJECTOVERZICHT
+  // ════════════════════════════════════════════════════════════
+  const rows1 = [];
+
+  // Title
+  rows1.push([hdr('MATERIEELINZET OVERZICHT — AANLEGFASE', '0F3460'), s(''), s(''), s(''), s(''), s(''), s('')]);
+  rows1.push([lbl('Aanlegfase: ' + dateStr), s(''), s(''), s(''), s(''), lbl('Gegenereerd: ' + new Date().toLocaleDateString('nl-NL')), s('')]);
+  rows1.push([s(''),s(''),s(''),s(''),s(''),s(''),s('')]);
+
+  // Summary header
+  rows1.push([subhdr('SAMENVATTING'), s(''), s(''), s(''), s(''), s(''), s('')]);
+  rows1.push([colhdr('Onderdeel'), colhdr('Stuks / Lengte'), colhdr('Uren'), colhdr(''), colhdr(''), colhdr(''), colhdr('')]);
+
+  const kpiRows = [
+    ['Open ontgraving',      verb.length + ' tracés · ' + (totLenVerb/1000).toFixed(2) + ' km', totGraaf],
+    ['Bemaling',             verb.filter(r=>r.bemaling).length + ' tracés · ' + verb.filter(r=>r.bemaling).reduce((a,r)=>a+(r.pompen||1),0) + ' pompen', totBem],
+    ['Wackerstamper',        verb.filter(r=>r.verhard).length + ' tracés', totWack],
+    ['Trilplaat straatwerk', verb.filter(r=>r.verhard).length + ' tracés', totTril],
+    ['Gestuurde boringen',   boor.length + ' stuks · ' + boor.reduce((a,r)=>a+r.length,0).toFixed(0) + ' m', totBoor],
+    ['Persingen',            pers.length + ' stuks', totPers],
+    ['Te verwijderen kabels',sloop.filter(r=>!r.zelfdeSluf).length + ' aparte sleuf', totSloop],
+    ['Kabellier',            (totLenVerb/1000).toFixed(2) + ' km', oKab],
+    ['Zuigwagen',            totBomen + ' bomen', oZ],
+    ['Kipper',               gn('oKipper') + ' dagen', oK],
+    ['Aggregaat',            gn('oAggregaat') + ' dagen', oAgg],
+  ].filter(r => r[2] > 0);
+
+  kpiRows.forEach((d, i) => {
+    const bg = i % 2 === 0 ? 'FFFFFF' : 'F0F4F8';
+    rows1.push([lbl(d[0], bg), lbl(d[1], bg), num(Math.round(d[2]), false, bg), dim(''), dim(''), dim(''), dim('')]);
+  });
+
+  // Totaal
+  const totR = [s('TOTAAL ALLE MATERIEEL', true, '1D5FA6', 'FFFFFF', true), s('', false, '1D5FA6'), num(Math.round(totAll), true, '1D5FA6'), s(Math.ceil(totAll/WD) + ' werkdagen', true, '1D5FA6', 'FFFFFF', true), s('', false, '1D5FA6'), s('', false, '1D5FA6'), s('', false, '1D5FA6')];
+  rows1.push(totR);
+  rows1.push([s(''),s(''),s(''),s(''),s(''),s(''),s('')]);
+
+  // Materieel overzicht
+  rows1.push([subhdr('MATERIEELOVERZICHT PER WERKTUIG'), s(''), s(''), s(''), s(''), s(''), s('')]);
+  rows1.push([colhdr('Werktuig'), colhdr('Werkdagen'), colhdr('Uren/dag'), colhdr('Totaal uren'), colhdr('Categorie'), colhdr('Opmerking'), s('')]);
+
+  const matRows = [];
+  if(totGraaf>0)  matRows.push(['Graafmachine (open ontgraving)', Math.ceil(totGraaf/WD), WD, Math.round(totGraaf), 'Open ontgraving', '']);
+  if(totBem>0)    matRows.push(['Bemalingspomp', Math.ceil(totBem/WD), WD, Math.round(totBem), 'Bemaling', verb.filter(r=>r.bemaling).map(r=>(r.name||'–')+': '+(r.pompen||1)+'×').join(', ')]);
+  if(totWack>0)   matRows.push(['Wackerstamper', Math.ceil(totWack/WD), WD, Math.round(totWack), 'Verdichting', '⅓ van graaftijd']);
+  if(totTril>0)   matRows.push(['Trilplaat', Math.ceil(totTril/WD), WD, Math.round(totTril), 'Verdichting', 'lengte ÷ 50 m/u']);
+  if(totSloop>0)  matRows.push(['Graafmachine (sloop)', Math.ceil(totSloop/WD), WD, Math.round(totSloop), 'Sloop', '']);
+  boor.forEach(r => { if(r.length>0) matRows.push([('HDD-boring' + (r.name?' — '+r.name:'') + ' ('+Math.round(r.length)+'m)'), r.length<200?(gn('kgBoringKort')||2):(gn('kgBoringLang')||3), WD, Math.round(boringUren(r)), 'Gestuurde boring', r.length<200?'< 200m':'≥ 200m']); });
+  pers.forEach(r => { matRows.push([('Boorraket'+(r.name?' — '+r.name:'')), 1, gn('kgPersingUur')||4, Math.round(persingUren(r)), 'Persing', '']); });
+  if(oK>0)   matRows.push(['Kipper', gn('oKipper'), WD, Math.round(oK), 'Overig', 'handmatig']);
+  if(oAgg>0) matRows.push(['Aggregaat', gn('oAggregaat'), WD, Math.round(oAgg), 'Overig', 'handmatig']);
+  if(oKab>0) matRows.push(['Kabellier', Math.ceil(oKab/WD), WD, Math.round(oKab), 'Overig', (totLenVerb/1000).toFixed(2)+' km ÷ '+(gn('kgKabellier')||500)+'m × 6u']);
+  if(oZ>0)   matRows.push(['Zuigwagen ('+totBomen+' bomen)', Math.ceil(oZ/WD), WD, Math.round(oZ), 'Overig', totBomen+' bomen × '+(WD/(gn('kgZuigwagen')||4)).toFixed(1)+'u/boom']);
+
+  matRows.forEach((d, i) => {
+    const bg = i % 2 === 0 ? 'FFFFFF' : 'F0F4F8';
+    rows1.push([lbl(d[0], bg), num(d[1], false, bg), num(d[2], false, bg), num(d[3], true, bg), lbl(d[4], bg), lbl(d[5], bg), s('', false, bg)]);
+  });
+
+  const ws1 = XLSX.utils.aoa_to_sheet(rows1);
+  ws1['!cols'] = [{wch:34},{wch:28},{wch:13},{wch:13},{wch:20},{wch:36},{wch:4}];
+  ws1['!rows'] = [{hpt:24},{hpt:14},{hpt:6},{hpt:20},{hpt:20}];
+  ws1['!merges'] = [
+    {s:{r:0,c:0},e:{r:0,c:6}},
+    {s:{r:1,c:0},e:{r:1,c:4}},
+    {s:{r:3,c:0},e:{r:3,c:6}},
+  ];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Projectoverzicht');
+
+  // ════════════════════════════════════════════════════════════
+  // SHEET 2 — VERBINDINGEN DETAIL
+  // ════════════════════════════════════════════════════════════
+  const rows2 = [];
+  rows2.push([hdr('VERBINDINGEN — DETAILBEREKENING'), s(''), s(''), s(''), s(''), s(''), s(''), s(''), s(''), s(''), s(''), s(''), s('')]);
+  rows2.push([lbl(verb.length+' verbindingen  ·  Totale lengte: '+(totLenVerb/1000).toFixed(2)+' km  ·  Binnen: '+gn('kgGraafBin')+' m/week · Buiten: '+gn('kgGraafBui')+' m/week'), s(''),s(''),s(''),s(''),s(''),s(''),s(''),s(''),s(''),s(''),s(''),s('')]);
+  rows2.push([s(''),s(''),s(''),s(''),s(''),s(''),s(''),s(''),s(''),s(''),s(''),s(''),s('')]);
+
+  const h2 = ['Nr','Naam / ID','Lengte (m)','Gebied','Verhard','Bemaling','Pompen','Prod. m/week','Graafuren','Wacker u','Trilplaat u','Bemaling u','Totaal uren','Werkdagen'];
+  rows2.push(h2.map(h => colhdr(h)));
+
+  let t2 = {len:0,graaf:0,wack:0,tril:0,bem:0,tot:0};
+  verb.forEach((r, i) => {
+    const gu=graafUren(r), wu=wackerUren(r), tu=trilUren(r), bu=bemalUren(r), tot=gu+wu+tu+bu;
+    t2.len+=r.length; t2.graaf+=gu; t2.wack+=wu; t2.tril+=tu; t2.bem+=bu; t2.tot+=tot;
+    const bg = i%2===0 ? 'FFFFFF' : 'F0F4F8';
+    const areaClr = r.binnen ? '1D5FA6' : '374151';
+    rows2.push([
+      num(i+1, false, bg),
+      lbl(r.name||'–', bg),
+      num(Math.round(r.length), false, bg),
+      s(r.binnen?'Binnenstedelijk':'Buitenstedelijk', false, bg, areaClr, true, 'center'),
+      s(r.verhard?'Ja':'Nee', false, bg, r.verhard?'B86B00':'374151', true, 'center'),
+      s(r.bemaling?'Ja':'Nee', false, bg, r.bemaling?'1C7A52':'374151', true, 'center'),
+      s(r.bemaling?(r.pompen||1)+'×':'–', false, bg, r.bemaling?'1C7A52':'9AA3B0', true, 'center'),
+      num(r.binnen?gn('kgGraafBin'):gn('kgGraafBui'), false, bg),
+      num(Math.round(gu), false, bg),
+      num(Math.round(wu), false, bg),
+      s(tu>0?(Math.round(tu)+(r.verhard&&(r.verhardingPct??100)<100?' ('+Math.round(r.verhardingPct??100)+'%)':'')):'–', false, bg, tu>0?'374151':'9AA3B0', true, 'center'),
+      s(bu>0?Math.round(bu)+(r.pompen>1?' ('+r.pompen+'×)':''):'–', false, bg, bu>0?'1C7A52':'9AA3B0', true, 'center'),
+      num(Math.round(tot), true, bg),
+      num(+(tot/WD).toFixed(1), false, bg),
+    ]);
+  });
+
+  // Totaalrij
+  rows2.push([
+    s('', true, '1D5FA6'), s('TOTAAL', true, '1D5FA6', 'FFFFFF', true),
+    num(Math.round(t2.len), true, '1D5FA6'),
+    s('', true, '1D5FA6'), s('', true, '1D5FA6'), s('', true, '1D5FA6'), s('', true, '1D5FA6'), s('', true, '1D5FA6'),
+    num(Math.round(t2.graaf), true, '1D5FA6'),
+    num(Math.round(t2.wack)||0, true, '1D5FA6'),
+    num(Math.round(t2.tril)||0, true, '1D5FA6'),
+    num(Math.round(t2.bem)||0, true, '1D5FA6'),
+    num(Math.round(t2.tot), true, '1D5FA6'),
+    num(+(t2.tot/WD).toFixed(1), true, '1D5FA6'),
+  ]);
+
+  const ws2 = XLSX.utils.aoa_to_sheet(rows2);
+  ws2['!cols'] = [{wch:5},{wch:30},{wch:10},{wch:16},{wch:8},{wch:9},{wch:8},{wch:11},{wch:10},{wch:9},{wch:10},{wch:13},{wch:11},{wch:10}];
+  ws2['!rows'] = [{hpt:24},{hpt:14}];
+  ws2['!merges'] = [{s:{r:0,c:0},e:{r:0,c:13}},{s:{r:1,c:0},e:{r:1,c:13}}];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Verbindingen detail');
+
+  // ════════════════════════════════════════════════════════════
+  // SHEET 3 — AERIUS INVULLIJST (fills original template)
+  // ════════════════════════════════════════════════════════════
+  const bin = atob(AERIUS_TEMPLATE_B64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  const wbAerius = XLSX.read(arr, { type: 'array' });
+  const wsA = wbAerius.Sheets['invullijst opdrachtgever'];
+
+  function setACell(coord, value) {
+    if (value === null || value === undefined || value === '') { delete wsA[coord]; return; }
+    wsA[coord] = { v: value, t: typeof value === 'number' ? 'n' : 's' };
+  }
+  function setAFormula(coord, formula) { wsA[coord] = { f: formula, t: 'n' }; }
+
+  for (let row = 3; row <= 13; row++) {
+    ['A','B','C','D','E','F','G','H','I','J','K','L'].forEach(col => { delete wsA[col+row]; });
+  }
+
+  const aerEntries = [];
+  if(totGraaf>0) aerEntries.push(['Graafmachine (open ontgraving)', 1, Math.ceil(totGraaf/WD), WD]);
+  if(totBem>0) { const mx=verb.filter(r=>r.bemaling).reduce((m,r)=>Math.max(m,r.pompen||1),1); aerEntries.push(['Bemalingspomp', mx, Math.ceil(totBem/(WD*mx)), WD]); }
+  if(totWack>0) aerEntries.push(['Wackerstamper / verdichter', 1, Math.ceil(totWack/WD), WD]);
+  if(totTril>0) aerEntries.push(['Trilplaat (herstraaing)', 1, Math.ceil(totTril/WD), WD]);
+  if(totSloop>0) aerEntries.push(['Graafmachine (te verwijderen kabels)', 1, Math.ceil(totSloop/WD), WD]);
+  boor.forEach(r => { if(r.length>0) aerEntries.push(['Boorinstallatie HDD'+(r.name?' — '+r.name:'')+ ' ('+Math.round(r.length)+'m)', 1, r.length<200?(gn('kgBoringKort')||2):(gn('kgBoringLang')||3), WD]); });
+  pers.forEach(r => { aerEntries.push(['Boorraket (persing)'+(r.name?' — '+r.name:''), 1, 1, gn('kgPersingUur')||4]); });
+  if(oK>0)   aerEntries.push(['Kipper', 1, Math.ceil(oK/WD), WD]);
+  if(oAgg>0) aerEntries.push(['Aggregaat / generator', 1, Math.ceil(oAgg/WD), WD]);
+  if(oKab>0) aerEntries.push(['Kabeltreklier / kabellier', 1, Math.ceil(oKab/WD), WD]);
+  if(oZ>0)   aerEntries.push(['Zuigwagen ('+totBomen+' bomen)', 1, Math.ceil(oZ/WD), WD]);
+
+  aerEntries.slice(0, 11).forEach((e, i) => {
+    const row = 3 + i;
+    setACell('A'+row, 'invullen');
+    setACell('B'+row, e[0]);
+    setACell('C'+row, e[1]);
+    setACell('D'+row, e[2]);
+    setACell('E'+row, e[3]);
+    setAFormula('F'+row, 'E'+row+'*D'+row);
+    setACell('H'+row, 'Stage V');
+    setACell('J'+row, 'nee');
+  });
+
+  const nZ2 = Math.round(gn('vZpd')*totWD_verk)||1;
+  const nL2 = Math.round(gn('vLpd')*totWD_verk)||6;
+  setACell('A17','invullen'); setACell('B17', nZ2); setACell('C17','vrachtwagens');
+  setACell('A18','invullen'); setACell('B18','transport van/naar depot'); setACell('C18','beschrijving aan-/afvoerroute');
+  setACell('A21','invullen'); setACell('B21', nL2); setACell('C21',"personenauto's en bestelbusjes");
+  setACell('A24','invullen'); setACell('B24', Math.ceil(nZ2*0.25)||1); setACell('C24','uur');
+
+  const sd = planS ? new Date(planS) : null;
+  const ed = planE ? new Date(planE) : null;
+  setACell('A27','invullen'); setACell('B27','start werkzaamheden'); setACell('C27', sd?sd.getFullYear():2026); setACell('D27', sd?sd.getMonth()+1:1);
+  setACell('A28','invullen'); setACell('B28','einde werkzaamheden');  setACell('C28', ed?ed.getFullYear():2026); setACell('D28', ed?ed.getMonth()+1:12);
+  wsA['!ref'] = 'A1:L28';
+
+  // Copy AERIUS sheet into our workbook
+  XLSX.utils.book_append_sheet(wb, wsA, 'AERIUS invullijst');
+
+  // ── DOWNLOAD ─────────────────────────────────────────────────
+  XLSX.writeFile(wb, 'materieelinzet_aanlegfase.xlsx', { bookType: 'xlsx', cellStyles: true });
+}
+
+// ─── COLUMN RESIZER ──────────────────────────────────────────────
+(function() {
+  const resizer  = document.getElementById('colResizer');
+  const workspace = resizer?.closest('.workspace') || document.querySelector('.workspace');
+  if (!resizer || !workspace) return;
+
+  let startX = 0, startW = 0, dragging = false;
+
+  const MIN_W = 220;
+  const MAX_W = 700;
+
+  function getLeftW() {
+    return parseInt(getComputedStyle(workspace).getPropertyValue('--left-w')) || 390;
+  }
+
+  resizer.addEventListener('mousedown', e => {
+    e.preventDefault();
+    dragging = true;
+    startX = e.clientX;
+    startW = getLeftW();
+    resizer.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const delta = e.clientX - startX;
+    const newW = Math.min(MAX_W, Math.max(MIN_W, startW + delta));
+    workspace.style.setProperty('--left-w', newW + 'px');
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    resizer.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+
+  // Touch support
+  resizer.addEventListener('touchstart', e => {
+    startX = e.touches[0].clientX;
+    startW = getLeftW();
+    dragging = true;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', e => {
+    if (!dragging) return;
+    const delta = e.touches[0].clientX - startX;
+    const newW = Math.min(MAX_W, Math.max(MIN_W, startW + delta));
+    workspace.style.setProperty('--left-w', newW + 'px');
+  }, { passive: true });
+
+  document.addEventListener('touchend', () => { dragging = false; });
+
+  // Double-click resets to default
+  resizer.addEventListener('dblclick', () => {
+    workspace.style.setProperty('--left-w', '390px');
+  });
+})();
+
+// ─── INIT ─────────────────────────────────────────────
+renderTables();
+recalc();
+
+
+// ════════════════════════════════════════════════════════════
+// VIEW MANAGEMENT
+// ════════════════════════════════════════════════════════════
+function showView(name) {
+  ['kaart','invoer','resultaten'].forEach(v => {
+    document.getElementById('view' + v.charAt(0).toUpperCase() + v.slice(1)).classList.toggle('active', v === name);
+    document.getElementById('nav' + v.charAt(0).toUpperCase() + v.slice(1)).classList.toggle('active', v === name);
+  });
+  if (name === 'resultaten') {
+    // Render results into resultaten panel
+    syncResultaten();
+  }
+  if (name === 'kaart' && leafletMap) {
+    setTimeout(() => leafletMap.invalidateSize(), 50);
+  }
+}
+
+function goToResultaten() {
+  showView('resultaten');
+}
+
+function syncResultaten() {
+  // Copy the content of #rs into #rsResultaten
+  const src = document.getElementById('rs');
+  const dst = document.getElementById('rsResultaten');
+  if (src && dst) dst.innerHTML = src.innerHTML;
+}
+
+// ════════════════════════════════════════════════════════════
+// KAART — Leaflet
+// ════════════════════════════════════════════════════════════
+let leafletMap = null;
+let mapLayers = {};   // id → leaflet layer
+let mapFeatures = [];  // {id, name, type, length, layer}
+let selectedMapId = null;
+
+function initMap() {
+  if (leafletMap) return;
+  leafletMap = L.map('map', { zoomControl: true }).setView([52.4, 4.9], 12);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles © Esri',
+    maxZoom: 19
+  }).addTo(leafletMap);
+  // Subtle labels overlay
+  L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '', maxZoom: 19, opacity: 0.7
+  }).addTo(leafletMap);
+}
+
+function typeColor(type) {
+  return type==='b' ? '#e06420' : type==='p' ? '#f5a97f' : type==='s' ? '#ef4444' : type==='ignore' ? '#6b7280' : '#5b9bd5';
+}
+function typeLabel(type) {
+  return type==='b'?'HDD':type==='p'?'Pers':type==='s'?'Sloop':type==='ignore'?'Filter':'Verb';
+}
+function typeCssClass(type) {
+  return type==='b'||type==='p'?'type-b':type==='s'?'type-s':type==='ignore'?'type-v':'type-v';
+}
+
+function loadGeoJSONOnMap(gj, filename) {
+  if (!leafletMap) initMap();
+
+  // Clear existing layers
+  mapFeatures.forEach(f => { if(f.layer) leafletMap.removeLayer(f.layer); });
+  mapFeatures = []; mapLayers = {}; selectedMapId = null;
+
+  let raw = [];
+  if (gj.type === 'FeatureCollection') raw = gj.features;
+  else if (gj.type === 'Feature') raw = [gj];
+  else { alert('Geen geldige FeatureCollection'); return; }
+
+  const bounds = [];
+  raw.forEach((f, i) => {
+    const g = f.geometry; if (!g) return;
+    let coords = [];
+    if (g.type === 'LineString') coords = g.coordinates;
+    else if (g.type === 'MultiLineString') coords = g.coordinates.flat(1);
+    else return;
+
+    const props = f.properties || {};
+    const type = detectType(props);
+    const name = getName(props, i);
+    const length = calcLen(coords);
+    const id = 'mf_' + i;
+
+    // Convert GeoJSON [lng,lat] to Leaflet [lat,lng]
+    const latlngs = coords.map(c => [c[1], c[0]]);
+    bounds.push(...latlngs);
+
+    const color = typeColor(type);
+    const dashArray = type === 'p' ? '6,4' : type === 'ignore' ? '2,6' : null;
+    const weight = 3;
+    const layer = L.polyline(latlngs, {
+      color, weight,
+      dashArray,
+      opacity: type === 'ignore' ? 0.35 : 0.9
+    }).addTo(leafletMap);
+
+    layer.on('click', () => selectMapFeature(id));
+    layer.on('mouseover', () => { if (selectedMapId !== id) layer.setStyle({ weight: 5, opacity: 1 }); });
+    layer.on('mouseout',  () => { if (selectedMapId !== id) layer.setStyle({ weight, opacity: type==='ignore'?0.35:0.9 }); });
+
+    mapFeatures.push({ id, name, type, length, layer, weight, opacity: type==='ignore'?0.35:0.9 });
+    mapLayers[id] = layer;
+  });
+
+  if (bounds.length) leafletMap.fitBounds(bounds, { padding: [20, 20] });
+
+  renderMapSidebar(filename);
+  updateConfirmBtn();
+}
+
+function selectMapFeature(id) {
+  // Deselect previous
+  if (selectedMapId && mapLayers[selectedMapId]) {
+    const prev = mapFeatures.find(f => f.id === selectedMapId);
+    if (prev) mapLayers[selectedMapId].setStyle({ weight: prev.weight, color: typeColor(prev.type), opacity: prev.opacity });
+    document.querySelectorAll('.map-feature-item').forEach(el => el.classList.remove('selected'));
+  }
+  selectedMapId = selectedMapId === id ? null : id;
+  if (selectedMapId && mapLayers[selectedMapId]) {
+    mapLayers[selectedMapId].setStyle({ weight: 6, color: '#ffffff', opacity: 1 });
+    const el = document.getElementById('mfi_' + id);
+    if (el) { el.classList.add('selected'); el.scrollIntoView({ block:'nearest' }); }
+    // Pan to
+    const f = mapFeatures.find(f => f.id === id);
+    if (f) leafletMap.fitBounds(f.layer.getBounds(), { padding:[40,40], maxZoom:16 });
+  }
+}
+
+function renderMapSidebar(filename) {
+  const list = document.getElementById('mapFeatureList');
+  const counts = {v:0,b:0,p:0,s:0,ignore:0};
+  mapFeatures.forEach(f => counts[f.type] = (counts[f.type]||0)+1);
+
+  document.getElementById('mapStatus').textContent =
+    (filename || '') + (filename ? ' — ' : '') +
+    [counts.v&&(counts.v+' verbindingen'), counts.b&&(counts.b+' boringen'),
+     counts.p&&(counts.p+' persingen'), counts.s&&(counts.s+' sloop'),
+     counts.ignore&&(counts.ignore+' gefilterd')]
+    .filter(Boolean).join(' · ');
+
+  list.innerHTML = mapFeatures.map(f => `
+    <div class="map-feature-item" id="mfi_${f.id}" onclick="selectMapFeature('${f.id}')">
+      <span class="map-feature-type ${typeCssClass(f.type)}">${typeLabel(f.type)}</span>
+      <span class="map-feature-name">${f.name}</span>
+      <span class="map-feature-len">${f.length>1000?(f.length/1000).toFixed(2)+'km':Math.round(f.length)+'m'}</span>
+    </div>`).join('');
+}
+
+function updateConfirmBtn() {
+  const hasFeatures = mapFeatures.filter(f => f.type !== 'ignore').length > 0;
+  const btn = document.getElementById('confirmBtn');
+  const hint = document.getElementById('confirmHint');
+  btn.disabled = !hasFeatures;
+  const n = mapFeatures.filter(f=>f.type!=='ignore').length;
+  hint.textContent = hasFeatures ? n + ' features klaar om te bevestigen' : 'Laad eerst een GeoJSON bestand';
+}
+
+function confirmAndGoToInvoer() {
+  // Parse the GeoJSON features into the state arrays
+  verb=[]; pers=[]; boor=[]; sloop=[]; uid=0;
+  let nv=0,np=0,nb=0,ns=0,nfilt=0;
+  mapFeatures.forEach((f,i) => {
+    if(f.type==='ignore'){ nfilt++; return; }
+    if(f.type==='s'){ sloop.push({id:uid++,name:f.name,length:f.length,zelfdeSluf:false,binnen:false}); ns++; }
+    else if(f.type==='p'){ pers.push({id:uid++,name:f.name,length:f.length}); np++; }
+    else if(f.type==='b'){ boor.push({id:uid++,name:f.name,length:f.length}); nb++; }
+    else{ verb.push({id:uid++,name:f.name,length:f.length,binnen:false,verhard:false,verhardingPct:100,bemaling:false,pompen:1}); nv++; }
+  });
+  document.getElementById('dzTxt').textContent =
+    `✓ ${nv} verbindingen · ${nb} boringen · ${np} persingen · ${ns} sloop${nfilt?' · '+nfilt+' gefilterd':''}`;
+  // Update nav badge
+  const badge = document.getElementById('navBadge');
+  badge.style.display = 'inline';
+  badge.textContent = (nv+nb+np+ns);
+  renderTables();
+  recalc();
+  showView('invoer');
+}
+
+function handleMapDrop(e) {
+  e.preventDefault();
+  const dz = document.getElementById('mapDz');
+  dz.style.borderColor = 'rgba(91,155,213,.4)';
+  dz.style.background = 'rgba(91,155,213,.06)';
+  const file = e.dataTransfer.files[0];
+  if (file) readMapFile(file);
+}
+function handleMapFile(e) { if(e.target.files[0]) readMapFile(e.target.files[0]); }
+function readMapFile(file) {
+  const r = new FileReader();
+  r.onload = e => {
+    try { loadGeoJSONOnMap(JSON.parse(e.target.result), file.name); }
+    catch(err) { alert('Ongeldig JSON: ' + err.message); }
+  };
+  r.readAsText(file);
+}
+
+// Also hook the existing GeoJSON dropzone (in invoer view) to also load on map
+const _origParseGJ = parseGJ;
+// Override parseGJ to also load on map when called from invoer dropzone
+function parseGJ(gj, fn) {
+  _origParseGJ(gj, fn);
+  loadGeoJSONOnMap(gj, fn);
+}
+
+// ════════════════════════════════════════════════════════════
+// PATCH: recalc also updates resultaten if that view is active
+// ════════════════════════════════════════════════════════════
+const _origRecalc = recalc;
+// recalc is defined in original JS - after it runs, sync resultaten
+function recalcAndSync() {
+  _origRecalc();
+  const resView = document.getElementById('viewResultaten');
+  if (resView && resView.classList.contains('active')) syncResultaten();
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+initMap();
+renderTables();
+recalc();
+</script>
+</body>
+</html>
